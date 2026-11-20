@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { handle, type ApiRequest, type ApiResponse, type Config } from '../server/app';
-import { MemoryStore, storeFromEnv, type Store } from '../server/store';
+import { MemoryStore, PrefixedStore, storeFromEnv, type Store } from '../server/store';
 import type { Bootstrap } from '../src/api-types';
 import { DEMO_CATALOG } from './fixtures/demo-catalog';
 
@@ -63,6 +63,28 @@ describe('without a database', () => {
     expect(storeFromEnv({ VERCEL: '1' })).toBeNull();
     expect(storeFromEnv({})).not.toBeNull();
     expect(storeFromEnv({ VERCEL: '1', KV_REST_API_URL: 'https://x.example', KV_REST_API_TOKEN: 't' })).not.toBeNull();
+  });
+});
+
+describe('shared database', () => {
+  it('keeps every GiftFit key under its own prefix', async () => {
+    const shared = new MemoryStore();
+    await shared.cmd('SET', 'catalog', 'another app');
+    await shared.cmd('SET', 'user:1', 'another app');
+    const browser = client(new PrefixedStore(shared, 'giftfit:'));
+    await browser.post('/auth/register', dana);
+    await browser.post('/favorites/toggle', { id: 'care-kit', saved: true });
+    await browser.post('/reviews', { giftId: 'care-kit', rating: 5 });
+    expect((await browser.boot()).favorites).toEqual(['care-kit']);
+    expect(await shared.cmd('EXISTS', 'giftfit:email:dana@example.com')).toBe(1);
+    expect(await shared.cmd('EXISTS', 'email:dana@example.com')).toBe(0);
+    expect(await shared.cmd('ZRANGE', 'giftfit:saves', 0, -1)).toEqual(['care-kit']);
+
+    await browser.post('/account/delete', { password: dana.password });
+    expect(await shared.cmd('EXISTS', 'giftfit:email:dana@example.com')).toBe(0);
+    // The other app's keys with the same names are untouched.
+    expect(await shared.cmd('GET', 'catalog')).toBe('another app');
+    expect(await shared.cmd('GET', 'user:1')).toBe('another app');
   });
 });
 

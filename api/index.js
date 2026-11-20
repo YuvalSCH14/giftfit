@@ -652,11 +652,29 @@ var MemoryStore = class {
     return replies;
   }
 };
+var PrefixedStore = class {
+  constructor(inner, prefix) {
+    this.inner = inner;
+    this.prefix = prefix;
+  }
+  apply(args) {
+    const [name, ...rest] = args;
+    if (String(name).toUpperCase() === "DEL") return [name, ...rest.map((key) => this.prefix + key)];
+    return rest.length ? [name, this.prefix + rest[0], ...rest.slice(1)] : args;
+  }
+  cmd(...args) {
+    return this.inner.cmd(...this.apply(args));
+  }
+  pipeline(commands) {
+    return this.inner.pipeline(commands.map((command) => this.apply(command)));
+  }
+};
+var KEY_PREFIX = "giftfit:";
 var globals = globalThis;
 function storeFromEnv(env = process.env) {
   const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
   const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
-  if (url && token) return new UpstashStore(url, token);
+  if (url && token) return new PrefixedStore(new UpstashStore(url, token), KEY_PREFIX);
   if (env.VERCEL) return null;
   return globals.__giftfitMemoryStore ??= new MemoryStore();
 }

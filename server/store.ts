@@ -151,6 +151,34 @@ export class MemoryStore implements Store {
   }
 }
 
+/**
+ * Puts every key under one prefix, so GiftFit can share a Redis database with other apps
+ * without touching their keys. Every command the API uses takes its key as the first
+ * argument; DEL takes several keys.
+ */
+export class PrefixedStore implements Store {
+  constructor(
+    private inner: Store,
+    private prefix: string,
+  ) {}
+
+  private apply(args: Arg[]): Arg[] {
+    const [name, ...rest] = args;
+    if (String(name).toUpperCase() === 'DEL') return [name, ...rest.map((key) => this.prefix + key)];
+    return rest.length ? [name, this.prefix + rest[0], ...rest.slice(1)] : args;
+  }
+
+  cmd<T>(...args: Arg[]): Promise<T> {
+    return this.inner.cmd<T>(...this.apply(args));
+  }
+
+  pipeline(commands: Arg[][]): Promise<unknown[]> {
+    return this.inner.pipeline(commands.map((command) => this.apply(command)));
+  }
+}
+
+export const KEY_PREFIX = 'giftfit:';
+
 const globals = globalThis as { __giftfitMemoryStore?: MemoryStore };
 
 /**
@@ -160,7 +188,7 @@ const globals = globalThis as { __giftfitMemoryStore?: MemoryStore };
 export function storeFromEnv(env: Record<string, string | undefined> = process.env): Store | null {
   const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
   const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
-  if (url && token) return new UpstashStore(url, token);
+  if (url && token) return new PrefixedStore(new UpstashStore(url, token), KEY_PREFIX);
   if (env.VERCEL) return null;
   return (globals.__giftfitMemoryStore ??= new MemoryStore());
 }
