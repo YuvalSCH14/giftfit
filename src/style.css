@@ -1118,3 +1118,14 @@ h2,
     transition: none !important;
   }
 }
+
+/* Short phones: a lower details card keeps the purchase action above the bottom bar. */
+@media (max-height: 760px) {
+  .gift-card-detail .media {
+    height: 236px;
+  }
+
+  .screen-details .primary-button {
+    margin-top: 20px;
+  }
+}
