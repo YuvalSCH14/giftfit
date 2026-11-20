@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 const out = process.argv[2] || require('node:os').tmpdir();
-const URL = 'http://localhost:5173/';
+const URL = process.argv[3] || 'http://localhost:5173/';
 let fails = 0;
 const log = (ok, msg) => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + msg); };
 (async () => {
@@ -26,7 +26,7 @@ const log = (ok, msg) => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL '
   await page.getByRole('searchbox').fill(first.name.split(' ')[0]);
   await page.keyboard.press('Enter');
   await page.waitForURL(/#find/);
-  log((await page.locator('.grid .gift-card').count()) >= 1, 'text search finds gifts');
+  log(await page.locator('.grid .gift-card').first().waitFor({ timeout: 5000 }).then(() => true, () => false), 'text search finds gifts');
   await shot('find');
   // save a favourite while signed out
   await page.locator('.grid .heart').first().click();
@@ -72,14 +72,21 @@ const log = (ok, msg) => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL '
   await shot('reminders');
   await page.getByRole('button', { name: 'למצוא מתנה' }).click();
   await page.waitForURL(/#search/);
-  log((await page.locator('.row-head', { hasText: 'סוג האירוע' }).innerText()).includes('יום הולדת'), 'reminder pre-fills the questionnaire');
+  const step = (n) => page.locator('.wizard-count').filter({ hasText: `שאלה ${n} מתוך 6` }).waitFor({ timeout: 5000 });
+  const skip = () => page.getByRole('button', { name: 'דילוג על השאלה', exact: true }).click();
+  // The reminder answered the first question, so the questionnaire opens on the second.
+  await step(2);
+  log(true, 'reminder opens the questionnaire past the answered question');
 
   // closest matches
-  await page.locator('.row-head', { hasText: 'תחומי עניין' }).click();
+  await skip(); await step(3); await skip(); await step(4);
   await page.getByLabel('מוזיקה', { exact: true }).click();
-  await page.locator('.row-head', { hasText: 'מיקום' }).click();
+  await page.getByRole('button', { name: 'המשך', exact: true }).click();
+  await step(5); await skip(); await step(6);
   await page.getByLabel('איסוף עצמי', { exact: true }).click();
   await page.getByLabel('באר שבע', { exact: true }).click();
+  await page.locator('.wizard-count').filter({ hasText: 'סיכום הבחירות' }).waitFor({ timeout: 5000 });
+  log((await page.locator('.wizard-row', { hasText: 'סוג האירוע' }).innerText()).includes('יום הולדת'), 'reminder pre-fills the questionnaire');
   await page.getByRole('button', { name: 'מצא לי מתנות מתאימות' }).click();
   await page.waitForURL(/#results/);
   await page.locator('main h1').waitFor();
