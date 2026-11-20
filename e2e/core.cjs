@@ -30,7 +30,8 @@ const log = (ok, msg) => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL '
     const button = (name) => page.getByRole('button', { name, exact: true });
     const row = (label) => page.locator('.wizard-row', { hasText: label });
     const navBar = page.locator('.bottom-nav');
-    const navShown = () => navBar.count().then((n) => n > 0);
+    // The bar stays mounted and slides away, so "shown" means it does not carry the hidden class.
+    const navShown = () => page.locator('.bottom-nav:not(.bottom-nav-hidden)').count().then((n) => n > 0);
     const submit = () => button('מצא לי מתנות מתאימות').click();
     /** The step's main action must be on screen and, while the bottom bar shows, above it. */
     const actionInView = async (name) => {
