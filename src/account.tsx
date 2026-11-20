@@ -2,7 +2,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Reminder } from './api-types';
 import { OCCASIONS, RELATIONS, type Occasion, type Relation } from './catalog';
-import { BottomNav, Choices, Field, PrimaryButton } from './components';
+import { Choices, Field, PrimaryButton } from './components';
 import { SOON_DAYS, daysLabel, upcoming } from './reminders';
 import { ApiError, api, errorText, useApp } from './state';
 import { EMPTY_FORM, href, navigate } from './storage';
@@ -177,9 +177,8 @@ function Account() {
 export function Profile() {
   const app = useApp();
   return (
-    <main className="screen screen-account with-nav">
+    <main className="screen screen-account">
       {!app.ready ? <p className="empty">טוענים…</p> : !app.storage ? <Unavailable title="החשבון שלי" /> : app.me ? <Account /> : <SignIn />}
-      <BottomNav active="profile" />
     </main>
   );
 }
@@ -279,7 +278,7 @@ export function Reminders() {
   );
 
   return (
-    <main className="screen screen-account with-nav">
+    <main className="screen screen-account">
       {!app.ready ? (
         <p className="empty">טוענים…</p>
       ) : !app.storage ? (
@@ -304,7 +303,6 @@ export function Reminders() {
           <ReminderForm />
         </>
       )}
-      <BottomNav />
     </main>
   );
 }

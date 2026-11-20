@@ -226,8 +226,21 @@ img {
   padding: 8px 24px calc(32px + env(safe-area-inset-bottom));
 }
 
-.screen.with-nav {
-  padding-bottom: calc(var(--nav-height) + var(--nav-gap) + 32px + env(safe-area-inset-bottom));
+/*
+ * --nav-clearance is the space the bottom bar takes at the bottom of the screen: its height,
+ * the gap under it and the safe area. It is 0 while the bar is hidden. Anything pinned to the
+ * bottom (sticky actions, toasts) offsets itself by it.
+ */
+.app {
+  --nav-clearance: 0px;
+}
+
+.app.nav-visible {
+  --nav-clearance: calc(var(--nav-height) + var(--nav-gap) + env(safe-area-inset-bottom));
+}
+
+.app.nav-visible .screen {
+  padding-bottom: calc(var(--nav-clearance) + 32px);
 }
 
 h1,
@@ -282,7 +295,7 @@ h2,
 .sticky-cta {
   position: sticky;
   z-index: 5;
-  bottom: 0;
+  bottom: var(--nav-clearance);
   display: flex;
   justify-content: center;
   width: 100%;

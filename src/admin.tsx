@@ -11,7 +11,7 @@ import {
   type Gift,
   type Store,
 } from './catalog';
-import { BackButton, BottomNav, Choices, Field, Price, PrimaryButton } from './components';
+import { BackButton, Choices, Field, Price, PrimaryButton } from './components';
 import { api, errorText, useApp } from './state';
 import { href, navigate } from './storage';
 
@@ -251,9 +251,8 @@ export function Admin({ id }: { id?: string }) {
   } else body = <CatalogList />;
 
   return (
-    <main className="screen screen-account with-nav">
+    <main className="screen screen-account">
       {body}
-      <BottomNav />
     </main>
   );
 }

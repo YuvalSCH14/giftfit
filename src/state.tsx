@@ -57,6 +57,12 @@ export interface AppState {
   reminders: Reminder[];
   favorites: Favorites;
   search: ReturnType<typeof useSearchForm>;
+  /**
+   * True while the user is in the middle of a step-by-step process (answering the gift
+   * questions). The bottom navigation hides for that time and returns when it ends.
+   */
+  flowActive: boolean;
+  setFlowActive: (active: boolean) => void;
   toast: (text: string) => void;
   signIn: (email: string, password: string) => Promise<void>;
   register: (input: { name: string; email: string; password: string; adminCode?: string }) => Promise<void>;
@@ -87,6 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ratings: {},
     popular: [],
   });
+  const [flowActive, setFlowActive] = useState(false);
   const [toastState, setToast] = useState<{ text: string; key: number } | null>(null);
   const toast = useCallback((text: string) => setToast({ text, key: Date.now() }), []);
 
@@ -148,6 +155,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reminders: boot.reminders,
       favorites: { ids: local.ids, has: local.has, toggle: toggleFavorite },
       search,
+      flowActive,
+      setFlowActive,
       toast,
       signIn: async (email, password) => {
         await api('POST', '/auth/login', { email, password });
@@ -172,7 +181,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setRatings: (ratings) => setBoot((current) => ({ ...current, ratings })),
       setReminders: (reminders) => setBoot((current) => ({ ...current, reminders })),
     };
-  }, [boot, local.ids, local.has, toggleFavorite, search, toast, load, replaceFavorites]);
+  }, [boot, local.ids, local.has, toggleFavorite, search, flowActive, toast, load, replaceFavorites]);
 
   return (
     <AppContext.Provider value={state}>

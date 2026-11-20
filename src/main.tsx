@@ -10,11 +10,24 @@ import './style.css';
 import { Profile, Reminders } from './account';
 import { Admin } from './admin';
 import { closestMatches, recommend, type Relaxed } from './catalog';
-import { Header } from './components';
+import { BottomNav, Header, type NavTarget } from './components';
+import { Questionnaire } from './questionnaire';
 import { SOON_DAYS, upcoming } from './reminders';
-import { Details, FavoritesScreen, Find, Home, NotFound, Questionnaire, Results, Stores } from './screens';
+import { Details, FavoritesScreen, Find, Home, NotFound, Results, Stores } from './screens';
 import { AppProvider, useApp } from './state';
 import { navigate, toSearch, useRoute } from './storage';
+
+/** Which bottom-bar tab each screen belongs to. */
+const NAV_TABS: Record<string, NavTarget | undefined> = {
+  home: 'home',
+  search: 'search',
+  results: 'search',
+  find: 'search',
+  favorites: 'favorites',
+  profile: 'profile',
+  reminders: 'profile',
+  admin: 'profile',
+};
 
 function App() {
   const route = useRoute();
@@ -63,8 +76,12 @@ function App() {
   else if ((page === 'gift' || page === 'stores') && !app.ready) screen = null; // the catalog may still be loading
   else screen = <NotFound />;
 
+  // The bottom bar stays on every screen and steps aside only while a process is under way.
+  const navVisible = !app.flowActive;
+  const activeTab = NAV_TABS[page ?? 'home'];
+
   return (
-    <div className="app">
+    <div className={`app${navVisible ? ' nav-visible' : ''}`}>
       <Header
         menuOpen={menuOpen}
         onMenu={setMenuOpen}
@@ -77,6 +94,7 @@ function App() {
       <div className="screen-wrap" key={route.join('-')}>
         {screen}
       </div>
+      {navVisible && <BottomNav active={activeTab} />}
     </div>
   );
 }
