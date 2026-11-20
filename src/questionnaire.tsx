@@ -1,7 +1,8 @@
-// The gift questionnaire ("למי המתנה?"): the media block with gift ideas and the questions.
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+// The gift questionnaire ("למי המתנה?"): one question per step, then a review of all answers.
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { AGE_GROUPS, INTERESTS, OCCASIONS, REGIONS, RELATIONS, validateSearch, type Gift, type Interest } from './catalog';
 import { Choices, Price, PrimaryButton, asset, illustration } from './components';
+import './questionnaire.css';
 import { useApp } from './state';
 import { EMPTY_FORM, href, navigate, toSearch, type SearchForm } from './storage';
 
@@ -68,20 +69,42 @@ function Gallery() {
   );
 }
 
-function Row(props: { label: string; value: ReactNode; open: boolean; onToggle: () => void; children: ReactNode }) {
-  const id = useId();
-  return (
-    <div className={`row${props.open ? ' row-open' : ''}`}>
-      <button type="button" className="row-head" aria-expanded={props.open} aria-controls={id} onClick={props.onToggle}>
-        <span className="row-label">{props.label}</span>
-        {props.value && <span className="row-value">{props.value}</span>}
-        <img className="row-chevron" src={asset('chevron.svg')} alt="" width={14} height={7} />
-      </button>
-      <div id={id} className="row-panel" hidden={!props.open}>
-        {props.children}
-      </div>
-    </div>
-  );
+/** The six questions, in the order of the rows in the Figma frame. Labels are the frame's row labels. */
+const STEPS = ['occasion', 'relation', 'age', 'interests', 'budget', 'location'] as const;
+type StepKey = (typeof STEPS)[number];
+/** Step index of the review that follows the last question. */
+const REVIEW = STEPS.length;
+const BUDGET = STEPS.indexOf('budget');
+
+const LABELS: Record<StepKey, string> = {
+  occasion: 'סוג האירוע',
+  relation: 'קרבה למקבל המתנה',
+  age: 'גיל מקבל המתנה',
+  interests: 'תחומי עניין',
+  budget: 'תקציב',
+  location: 'מיקום',
+};
+
+const HINTS: Partial<Record<StepKey, string>> = {
+  interests: 'אפשר לבחור כמה',
+  budget: 'אפשר למלא רק מינימום או רק מקסימום',
+};
+
+function isAnswered(form: SearchForm, key: StepKey): boolean {
+  switch (key) {
+    case 'occasion':
+      return form.occasion !== null;
+    case 'relation':
+      return form.relation !== null;
+    case 'age':
+      return form.age !== null;
+    case 'interests':
+      return form.unsureInterests || form.interests.length > 0;
+    case 'budget':
+      return form.budgetMin.trim() !== '' || form.budgetMax.trim() !== '';
+    case 'location':
+      return form.fulfilment !== null;
+  }
 }
 
 function budgetSummary(form: SearchForm): ReactNode {
@@ -104,55 +127,211 @@ function budgetSummary(form: SearchForm): ReactNode {
   );
 }
 
-const ROWS = ['occasion', 'relation', 'age', 'interests', 'budget', 'location'] as const;
-type RowKey = (typeof ROWS)[number];
-type SingleField = 'occasion' | 'relation' | 'age';
+function summary(form: SearchForm, key: StepKey): ReactNode {
+  switch (key) {
+    case 'occasion':
+      return form.occasion ? OCCASIONS[form.occasion] : '';
+    case 'relation':
+      return form.relation ? RELATIONS[form.relation] : '';
+    case 'age':
+      return form.age ? AGE_GROUPS[form.age] : '';
+    case 'interests':
+      return form.unsureInterests ? 'לא בטוחה' : form.interests.map((i) => INTERESTS[i]).join(', ');
+    case 'budget':
+      return budgetSummary(form);
+    case 'location':
+      if (form.fulfilment === 'delivery') return 'משלוח';
+      if (form.fulfilment === 'pickup') return `איסוף${form.region ? `, ${REGIONS[form.region]}` : ''}`;
+      return '';
+  }
+}
+
+/**
+ * The questionnaire keeps its step in the browser history entry, so the phone's Back
+ * gesture walks back through the questions without leaving the screen.
+ */
+interface WizardEntry {
+  gfStep: number;
+  /** How many wizard entries were pushed before this one in this visit. */
+  gfDepth: number;
+  /** Editing one answer from the review: confirming returns to the review. */
+  gfReturn?: boolean;
+}
+
+function readEntry(): WizardEntry | null {
+  try {
+    const state = window.history.state as Partial<WizardEntry> | null;
+    if (state && typeof state.gfStep === 'number' && state.gfStep >= 0 && state.gfStep <= REVIEW) {
+      return { gfStep: state.gfStep, gfDepth: state.gfDepth ?? 0, gfReturn: state.gfReturn === true };
+    }
+  } catch {
+    // Some embedded hosts do not expose history state.
+  }
+  return null;
+}
+
+function writeEntry(entry: WizardEntry, mode: 'push' | 'replace') {
+  try {
+    if (mode === 'push') window.history.pushState(entry, '');
+    else window.history.replaceState(entry, '');
+  } catch {
+    // Without history the in-page Back button still works.
+  }
+}
+
+/** Where to open: the review when editing a finished search, otherwise the first unanswered question. */
+function openingStep(form: SearchForm, submitted: boolean): number {
+  if (submitted) return REVIEW;
+  if (JSON.stringify(form) === JSON.stringify(EMPTY_FORM)) return 0;
+  const next = STEPS.findIndex((key) => !isAnswered(form, key));
+  return next === -1 ? REVIEW : next;
+}
+
+/** How long a tapped choice stays visible before the next question appears. */
+const ADVANCE_DELAY = 180;
 
 export function Questionnaire() {
-  const { search } = useApp();
+  const { search, setFlowActive } = useApp();
   const { form } = search;
-  const [open, setOpen] = useState<RowKey | null>(null);
+
+  const [opening] = useState(() => {
+    const entry = readEntry();
+    return entry ? { step: entry.gfStep, editing: entry.gfReturn === true } : { step: openingStep(form, search.submitted), editing: false };
+  });
+  const [step, setStep] = useState(opening.step);
+  /** True while changing a single answer from the review. */
+  const [editing, setEditing] = useState(opening.editing);
+  // The process has begun once a question was answered or skipped, or when opening past the first one.
+  const [started, setStarted] = useState(() => !(opening.step === 0 && JSON.stringify(form) === JSON.stringify(EMPTY_FORM)));
   const [error, setError] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const moved = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+
+  // The bottom bar steps aside while the process is under way and always returns on leaving.
+  useEffect(() => {
+    setFlowActive(started);
+    return () => setFlowActive(false);
+  }, [started, setFlowActive]);
+
+  const show = useCallback((next: number, edit: boolean) => {
+    window.clearTimeout(timer.current);
+    moved.current = true;
+    setError(null);
+    setStep(next);
+    setEditing(edit);
+  }, []);
+
+  useEffect(() => {
+    if (!readEntry()) writeEntry({ gfStep: opening.step, gfDepth: 0 }, 'replace');
+    const onPop = () => {
+      const entry = readEntry();
+      if (entry) show(entry.gfStep, entry.gfReturn === true);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.clearTimeout(timer.current);
+    };
+  }, [opening.step, show]);
+
+  // After moving between steps, start at the top and let a screen reader read the new question.
+  useEffect(() => {
+    if (!moved.current) return;
+    window.scrollTo(0, 0);
+    heading.current?.focus({ preventScroll: true });
+  }, [step]);
+
+  const go = (next: number, edit = false) => {
+    writeEntry({ gfStep: next, gfDepth: (readEntry()?.gfDepth ?? 0) + 1, gfReturn: edit }, 'push');
+    show(next, edit);
+  };
+
+  /** Moves on from the current question: to the next one, or back to the review when editing. */
+  const advance = (from: number, edit: boolean) => {
+    setStarted(true);
+    if (!edit) {
+      go(from + 1);
+      return;
+    }
+    const entry = readEntry();
+    if (entry?.gfReturn && entry.gfDepth > 0) window.history.back();
+    else go(REVIEW);
+  };
+
+  const back = () => {
+    if ((readEntry()?.gfDepth ?? 0) > 0) {
+      window.history.back();
+      return;
+    }
+    // Opened part-way (pre-filled or editing): step back in place.
+    const previous = step === REVIEW ? STEPS.length - 1 : step - 1;
+    writeEntry({ gfStep: previous, gfDepth: 0 }, 'replace');
+    show(previous, false);
+  };
+
   const set = (patch: Partial<SearchForm>) => {
     setError(null);
     search.setForm({ ...form, ...patch });
   };
-  const toggleRow = (key: RowKey) => setOpen((current) => (current === key ? null : key));
 
-  /** Single-choice rows move on to the next question once answered. */
-  const pickSingle = <K extends SingleField>(field: K, key: SearchForm[K]) => {
+  /** A tapped choice shows as selected for a moment, then the next question appears. */
+  const advanceSoon = () => {
+    const from = step;
+    const edit = editing;
+    setStarted(true);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => advance(from, edit), ADVANCE_DELAY);
+  };
+
+  const pickSingle = <K extends 'occasion' | 'relation' | 'age'>(field: K, key: SearchForm[K]) => {
     const cleared = form[field] === key;
     set({ [field]: cleared ? null : key } as Partial<SearchForm>);
-    if (!cleared) setOpen(ROWS[ROWS.indexOf(field) + 1]);
+    if (cleared) window.clearTimeout(timer.current);
+    else advanceSoon();
   };
+
   const toggleInterest = (interest: Interest) =>
     set({
       unsureInterests: false,
-      interests: form.interests.includes(interest)
-        ? form.interests.filter((i) => i !== interest)
-        : [...form.interests, interest],
+      interests: form.interests.includes(interest) ? form.interests.filter((i) => i !== interest) : [...form.interests, interest],
     });
+
+  const isReview = step === REVIEW;
+  const key = isReview ? null : STEPS[step];
+  const answered = key ? isAnswered(form, key) : false;
+  const dirty = JSON.stringify(form) !== JSON.stringify(EMPTY_FORM);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    window.clearTimeout(timer.current);
     const problem = validateSearch(toSearch(form));
-    if (problem) {
-      setError(problem);
-      setOpen('budget');
+    if (isReview) {
+      if (problem) {
+        go(BUDGET, true);
+        setError(problem);
+        return;
+      }
+      search.submit(form);
+      navigate('results');
       return;
     }
-    search.submit(form);
-    navigate('results');
+    // A reversed budget is fixed on the budget question, with the typed values kept.
+    if (key === 'budget' && problem) {
+      setError(problem);
+      return;
+    }
+    advance(step, editing);
   };
 
-  const interestsValue = form.unsureInterests ? 'לא בטוחה' : form.interests.map((i) => INTERESTS[i]).join(', ');
-  const locationValue =
-    form.fulfilment === 'delivery'
-      ? 'משלוח'
-      : form.fulfilment === 'pickup'
-        ? `איסוף${form.region ? `, ${REGIONS[form.region]}` : ''}`
-        : '';
-  const dirty = JSON.stringify(form) !== JSON.stringify(EMPTY_FORM);
+  const clear = () => {
+    window.clearTimeout(timer.current);
+    search.reset();
+    setStarted(false);
+    writeEntry({ gfStep: 0, gfDepth: readEntry()?.gfDepth ?? 0 }, 'replace');
+    show(0, false);
+  };
+
   const budgetField = (label: string, field: 'budgetMin' | 'budgetMax') => (
     <label>
       <span>{label}</span>
@@ -172,23 +351,17 @@ export function Questionnaire() {
     </label>
   );
 
-  return (
-    <main className="screen screen-search">
-      <Gallery />
-      <form className="questionnaire" onSubmit={submit} noValidate>
-        <h1>למי המתנה?</h1>
-        <div className="rows">
-          <Row label="סוג האירוע" value={form.occasion ? OCCASIONS[form.occasion] : ''} open={open === 'occasion'} onToggle={() => toggleRow('occasion')}>
-            <Choices legend="סוג האירוע" options={OCCASIONS} selected={form.occasion ? [form.occasion] : []} onPick={(k) => pickSingle('occasion', k)} />
-          </Row>
-          <Row label="קרבה למקבל המתנה" value={form.relation ? RELATIONS[form.relation] : ''} open={open === 'relation'} onToggle={() => toggleRow('relation')}>
-            <Choices legend="קרבה למקבל המתנה" options={RELATIONS} selected={form.relation ? [form.relation] : []} onPick={(k) => pickSingle('relation', k)} />
-          </Row>
-          <Row label="גיל מקבל המתנה" value={form.age ? AGE_GROUPS[form.age] : ''} open={open === 'age'} onToggle={() => toggleRow('age')}>
-            <Choices legend="גיל מקבל המתנה" options={AGE_GROUPS} selected={form.age ? [form.age] : []} onPick={(k) => pickSingle('age', k)} />
-          </Row>
-          <Row label="תחומי עניין" value={interestsValue} open={open === 'interests'} onToggle={() => toggleRow('interests')}>
-            <p className="hint hint-first">אפשר לבחור כמה</p>
+  const question = () => {
+    switch (key) {
+      case 'occasion':
+        return <Choices legend={LABELS.occasion} options={OCCASIONS} selected={form.occasion ? [form.occasion] : []} onPick={(k) => pickSingle('occasion', k)} />;
+      case 'relation':
+        return <Choices legend={LABELS.relation} options={RELATIONS} selected={form.relation ? [form.relation] : []} onPick={(k) => pickSingle('relation', k)} />;
+      case 'age':
+        return <Choices legend={LABELS.age} options={AGE_GROUPS} selected={form.age ? [form.age] : []} onPick={(k) => pickSingle('age', k)} />;
+      case 'interests':
+        return (
+          <>
             <Choices legend="תחומי עניין, אפשר לבחור כמה" options={INTERESTS} selected={form.interests} multiple onPick={toggleInterest} />
             <label className="chip chip-unsure">
               <input
@@ -198,8 +371,11 @@ export function Questionnaire() {
               />
               <span>לא בטוחה</span>
             </label>
-          </Row>
-          <Row label="תקציב" value={budgetSummary(form)} open={open === 'budget'} onToggle={() => toggleRow('budget')}>
+          </>
+        );
+      case 'budget':
+        return (
+          <>
             <div className="budget">
               {budgetField('מינימום (₪)', 'budgetMin')}
               {budgetField('מקסימום (₪)', 'budgetMax')}
@@ -209,35 +385,115 @@ export function Questionnaire() {
                 {error}
               </p>
             )}
-          </Row>
-          <Row label="מיקום" value={locationValue} open={open === 'location'} onToggle={() => toggleRow('location')}>
+          </>
+        );
+      case 'location':
+        return (
+          <>
             <Choices
               legend="אופן קבלה"
               options={{ pickup: 'איסוף עצמי', delivery: 'משלוח' }}
               selected={form.fulfilment ? [form.fulfilment] : []}
-              onPick={(k) => set({ fulfilment: form.fulfilment === k ? null : k })}
+              onPick={(k) => {
+                const cleared = form.fulfilment === k;
+                set({ fulfilment: cleared ? null : k });
+                // Delivery needs nothing more; pickup goes on to ask for the region.
+                if (!cleared && k === 'delivery') advanceSoon();
+                else window.clearTimeout(timer.current);
+              }}
             />
             {form.fulfilment === 'pickup' && (
               <>
                 <p className="hint">באיזה אזור נוח לאסוף?</p>
-                <Choices legend="אזור איסוף" options={REGIONS} selected={form.region ? [form.region] : []} onPick={(k) => set({ region: form.region === k ? null : k })} />
+                <Choices
+                  legend="אזור איסוף"
+                  options={REGIONS}
+                  selected={form.region ? [form.region] : []}
+                  onPick={(k) => {
+                    const cleared = form.region === k;
+                    set({ region: cleared ? null : k });
+                    if (cleared) window.clearTimeout(timer.current);
+                    else advanceSoon();
+                  }}
+                />
               </>
             )}
-          </Row>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const progressText = isReview ? 'סיכום הבחירות' : `שאלה ${step + 1} מתוך ${STEPS.length}`;
+
+  return (
+    <main className="screen screen-search">
+      {step === 0 && <Gallery />}
+      <form className="wizard" onSubmit={submit} noValidate>
+        {step > 0 && (
+          <button type="button" className="back wizard-back" onClick={back}>
+            <img src={asset('chevron.svg')} alt="" width={14} height={7} />
+            חזרה
+          </button>
+        )}
+        <h1>למי המתנה?</h1>
+
+        <div className="wizard-progress">
+          <span className="wizard-dots" aria-hidden="true">
+            {STEPS.map((stepKey, index) => (
+              <span key={stepKey} className={index === step ? 'current' : isReview || index < step || isAnswered(form, stepKey) ? 'done' : undefined} />
+            ))}
+          </span>
+          <span className="wizard-count" role="status">
+            {progressText}
+          </span>
         </div>
-        <div className="sticky-cta">
-          <PrimaryButton type="submit">מצא לי מתנות מתאימות</PrimaryButton>
+
+        {/* Keyed by step so each question settles in as it appears. */}
+        <div className="wizard-step" key={step}>
+          {key ? (
+            <section className="wizard-card" aria-labelledby="wizard-question">
+              <h2 id="wizard-question" ref={heading} tabIndex={-1}>
+                {LABELS[key]}
+              </h2>
+              {HINTS[key] && <p className="hint wizard-hint">{HINTS[key]}</p>}
+              {question()}
+            </section>
+          ) : (
+            <section aria-labelledby="wizard-question">
+              <h2 id="wizard-question" ref={heading} tabIndex={-1} className="wizard-review-title">
+                אפשר לשנות כל תשובה
+              </h2>
+              <ul className="wizard-review">
+                {STEPS.map((stepKey, index) => {
+                  const value = summary(form, stepKey);
+                  return (
+                    <li key={stepKey}>
+                      <button type="button" className="wizard-row" onClick={() => go(index, true)}>
+                        <span className="wizard-row-label">{LABELS[stepKey]}</span>
+                        <span className={`wizard-row-value${value ? '' : ' wizard-row-empty'}`}>{value || 'לא נבחר'}</span>
+                        <img src={asset('chevron.svg')} alt="" width={14} height={7} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+        </div>
+
+        <div className="wizard-actions">
+          {isReview ? (
+            <PrimaryButton type="submit">מצא לי מתנות מתאימות</PrimaryButton>
+          ) : (
+            <PrimaryButton type="submit" quiet={!answered && !editing}>
+              {editing ? 'אישור' : answered ? 'המשך' : 'דילוג על השאלה'}
+            </PrimaryButton>
+          )}
         </div>
         {dirty && (
-          <button
-            type="button"
-            className="text-link"
-            onClick={() => {
-              setError(null);
-              setOpen(null);
-              search.reset();
-            }}
-          >
+          <button type="button" className="text-link" onClick={clear}>
             ניקוי הבחירות
           </button>
         )}
