@@ -33,7 +33,7 @@ const log = (ok, msg) => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL '
   const savedId = (await page.evaluate(() => JSON.parse(localStorage.getItem('giftfit:favorites'))))[0];
 
   // register
-  await page.getByRole('navigation', { name: 'ניווט ראשי' }).getByRole('link', { name: 'החשבון שלי' }).click();
+  await page.getByRole('navigation', { name: 'ניווט ראשי' }).getByRole('link', { name: /החשבון שלי|התחברות או הרשמה/ }).click();
   await page.getByRole('tab', { name: 'חשבון חדש' }).click();
   await shot('register');
   await page.getByLabel('שם').fill('דנה');

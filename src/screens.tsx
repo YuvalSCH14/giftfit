@@ -147,9 +147,9 @@ export function Results(props: {
         ))}
       </ul>
       {visible.length < results.length ? (
-        <div className="sticky-cta">
-          <PrimaryButton onClick={props.onExpand}>להמלצות נוספות</PrimaryButton>
-        </div>
+        // In the page flow, under the cards: with the bottom bar always present, a second pinned
+        // button would cover the results.
+        <PrimaryButton onClick={props.onExpand}>להמלצות נוספות</PrimaryButton>
       ) : (
         <p className="end-note" role="status">
           {results.length === 1 ? 'זו ההמלצה היחידה לחיפוש הזה.' : `אלה כל ${results.length} ההמלצות לחיפוש הזה.`}

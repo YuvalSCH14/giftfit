@@ -379,20 +379,36 @@ h2,
   padding: 0 8px;
   border-radius: 50px;
   background: var(--button);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   transform: translateX(-50%);
+  transition: transform 0.25s ease, opacity 0.2s ease, visibility 0s;
 }
 
-.bottom-nav a,
-.bottom-nav button {
+/* Slides below the screen while a process (the gift questions) is under way. */
+.bottom-nav-hidden {
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(-50%) translateY(calc(100% + var(--nav-gap) + 24px));
+  transition: transform 0.25s ease, opacity 0.2s ease, visibility 0s 0.25s;
+}
+
+.bottom-nav a {
   position: relative;
   display: grid;
   place-items: center;
-  width: 60px;
+  width: 72px;
   height: 56px;
-  padding: 0;
-  border: 0;
   border-radius: 28px;
-  background: none;
+  transition: background-color 0.15s ease, transform 0.12s ease;
+}
+
+.bottom-nav a:active {
+  transform: scale(0.92);
+}
+
+/* The current tab: a lit pill behind the brighter icon. */
+.bottom-nav a[aria-current='page'] {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .bottom-nav :focus-visible {
@@ -400,13 +416,25 @@ h2,
   outline-offset: -3px;
 }
 
-.bottom-nav button:disabled {
-  opacity: 0.45;
-}
-
 /* The exported heart sits in the left 20px of a 33px canvas; shift it back to centre. */
 .bottom-nav .nav-heart {
   margin-right: -13px;
+}
+
+.nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--button);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
 }
 
 /* Gift cards */
@@ -1068,10 +1096,14 @@ h2,
 }
 
 /* Feedback */
+body:has(.app.nav-visible) .toast-region {
+  bottom: calc(var(--nav-height) + var(--nav-gap) + 14px + env(safe-area-inset-bottom));
+}
+
 .toast-region {
   position: fixed;
   z-index: 20;
-  bottom: calc(var(--nav-height) + var(--nav-gap) + 14px + env(safe-area-inset-bottom));
+  bottom: calc(14px + env(safe-area-inset-bottom));
   left: 0;
   right: 0;
   display: flex;

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import type { Rating } from './api-types';
 import { formatPrice, type Gift } from './catalog';
 import { goBack, href } from './storage';
@@ -85,29 +85,44 @@ export function Header(props: {
 
 export type NavTarget = 'home' | 'search' | 'favorites' | 'profile';
 
-export function BottomNav({ active }: { active?: NavTarget }) {
-  const current = (target: NavTarget) => (active === target ? 'page' : undefined);
+const NAV_ITEMS: { tab: NavTarget; label: string; hash: string; icon: string; activeIcon: string; size: [number, number] }[] = [
+  { tab: 'home', label: 'בית', hash: href(), icon: 'home.svg', activeIcon: 'home-active.svg', size: [32, 32] },
+  { tab: 'search', label: 'חיפוש מתנה', hash: href('search'), icon: 'search.svg', activeIcon: 'search-active.svg', size: [24, 24] },
+  { tab: 'favorites', label: 'המתנות שאהבתי', hash: href('favorites'), icon: 'favorite.svg', activeIcon: 'favorite-active.svg', size: [33.19, 24] },
+  { tab: 'profile', label: 'החשבון שלי', hash: href('profile'), icon: 'user.svg', activeIcon: 'user-active.svg', size: [24, 24] },
+];
+
+/**
+ * The bottom bar. It is always mounted; `hidden` slides it away while a process is under way.
+ * Tapping the tab you are already on scrolls back to the top.
+ */
+export function BottomNav(props: { active?: NavTarget; hidden?: boolean; favoriteCount?: number; signedIn?: boolean }) {
+  const count = props.favoriteCount ?? 0;
+  const onTap = (event: MouseEvent<HTMLAnchorElement>, hash: string) => {
+    const here = window.location.hash || '#';
+    if (here !== hash) return;
+    event.preventDefault();
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' });
+  };
   return (
     // Icon order is fixed left to right: home, search, favorites, profile.
-    <nav className="bottom-nav" dir="ltr" aria-label="ניווט ראשי">
-      <a href={href()} aria-label="בית" aria-current={current('home')}>
-        <img src={asset(active === 'home' ? 'home-active.svg' : 'home.svg')} alt="" width={32} height={32} />
-      </a>
-      <a href={href('search')} aria-label="חיפוש מתנה" aria-current={current('search')}>
-        <img src={asset('search.svg')} alt="" width={24} height={24} />
-      </a>
-      <a href={href('favorites')} aria-label="המתנות שאהבתי" aria-current={current('favorites')}>
-        <img
-          className="nav-heart"
-          src={asset(active === 'favorites' ? 'favorite-active.svg' : 'favorite.svg')}
-          alt=""
-          width={33.19}
-          height={24}
-        />
-      </a>
-      <a href={href('profile')} aria-label="החשבון שלי" aria-current={current('profile')}>
-        <img src={asset('user.svg')} alt="" width={24} height={24} />
-      </a>
+    <nav className={`bottom-nav${props.hidden ? ' bottom-nav-hidden' : ''}`} dir="ltr" aria-label="ניווט ראשי" inert={props.hidden}>
+      {NAV_ITEMS.map(({ tab, label, hash, icon, activeIcon, size }) => {
+        const active = props.active === tab;
+        const badge = tab === 'favorites' && count > 0;
+        const name = badge ? `${label}, ${count}` : tab === 'profile' && !props.signedIn ? 'התחברות או הרשמה' : label;
+        return (
+          <a key={tab} href={hash} aria-label={name} aria-current={active ? 'page' : undefined} onClick={(event) => onTap(event, hash)}>
+            <img className={tab === 'favorites' ? 'nav-heart' : undefined} src={asset(active ? activeIcon : icon)} alt="" width={size[0]} height={size[1]} />
+            {badge && (
+              <span className="nav-badge" aria-hidden="true">
+                {count > 99 ? '99+' : count}
+              </span>
+            )}
+          </a>
+        );
+      })}
     </nav>
   );
 }

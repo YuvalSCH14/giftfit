@@ -25,5 +25,7 @@ const devApi = (): Plugin => ({
 export default defineConfig({
   base: './',
   plugins: [react(), devApi()],
+  // Agent worktrees live under .claude/ inside the repo; they are separate checkouts, not this app.
+  server: { watch: { ignored: ['**/.claude/**'] } },
   test: { include: ['test/**/*.test.ts'] },
 });

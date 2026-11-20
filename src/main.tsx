@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { StrictMode, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
@@ -78,7 +78,10 @@ function App() {
 
   // The bottom bar stays on every screen and steps aside only while a process is under way.
   const navVisible = !app.flowActive;
-  const activeTab = NAV_TABS[page ?? 'home'];
+  // A gift or store page keeps the tab the user came from lit.
+  const lastTab = useRef<NavTarget>('home');
+  const activeTab = NAV_TABS[page ?? 'home'] ?? lastTab.current;
+  lastTab.current = activeTab;
 
   return (
     <div className={`app${navVisible ? ' nav-visible' : ''}`}>
@@ -94,7 +97,7 @@ function App() {
       <div className="screen-wrap" key={route.join('-')}>
         {screen}
       </div>
-      {navVisible && <BottomNav active={activeTab} />}
+      <BottomNav active={activeTab} hidden={!navVisible} favoriteCount={app.favorites.ids.length} signedIn={app.me !== null} />
     </div>
   );
 }
