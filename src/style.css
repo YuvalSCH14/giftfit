@@ -28,8 +28,22 @@ body {
   background: #fff;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  scroll-padding-bottom: 120px;
+}
+
 body {
   overflow-x: hidden;
+  overscroll-behavior-y: none;
+}
+
+a,
+button,
+label,
+input {
+  touch-action: manipulation;
 }
 
 h1,
@@ -86,6 +100,19 @@ img {
   min-height: 100dvh;
   margin: 0 auto;
   padding-top: env(safe-area-inset-top);
+  background: #fff;
+}
+
+/* On a wide screen the app stays a phone-width column on a quiet backdrop. */
+@media (min-width: 600px) {
+  html,
+  body {
+    background: #efebea;
+  }
+
+  .app {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 12px 40px rgba(0, 0, 0, 0.08);
+  }
 }
 
 /* Header: menu at x=24, logo 151×67 centred, bell 35px ending at x=403. */
@@ -108,9 +135,77 @@ img {
   justify-items: start;
 }
 
-.header .icon-button:last-child {
+.header .icon-button:nth-of-type(2) {
   justify-self: end;
   justify-items: end;
+}
+
+/* Menu drawer, opened from the menu icon on the left. */
+.menu {
+  inset: 0 auto 0 max(0px, calc(50% - 215px));
+  width: min(300px, 82vw);
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.18);
+}
+
+.menu[open] {
+  animation: drawer-in 0.2s ease-out;
+}
+
+.menu::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.menu-panel {
+  display: flex;
+  flex-direction: column;
+  padding: calc(16px + env(safe-area-inset-top)) 20px 24px;
+}
+
+.menu-panel a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  border-bottom: 1px solid #e4dfde;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  text-decoration: none;
+}
+
+.menu-close {
+  align-self: flex-start;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 8px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font-size: 22px;
+}
+
+.menu-count {
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 50px;
+  background: var(--button);
+  color: #fff;
+  font-size: 15px;
+  text-align: center;
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
 }
 
 .logo {
@@ -171,12 +266,67 @@ h2,
   background: #111;
 }
 
+.primary-button:active,
+.chip input:active + span,
+.occasions button:active .occasion-circle {
+  transform: scale(0.97);
+}
+
+.primary-button,
+.chip span,
+.occasion-circle {
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+/* Keeps the main action reachable while the content above it scrolls. */
+.sticky-cta {
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 14px 0 calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(rgba(255, 255, 255, 0), #fff 30%);
+}
+
 .text-link {
   display: inline-block;
+  min-height: 44px;
   padding: 10px 8px;
+  border: 0;
+  background: none;
   font-size: 16px;
   font-weight: 500;
+  text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  min-height: 44px;
+  margin: -6px 0 -8px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* The Figma chevron points down; turned to point back (right, in RTL). */
+.back img {
+  transform: rotate(-90deg);
+}
+
+.end-note {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: #4a4a4a;
+  text-align: center;
 }
 
 .empty {
@@ -500,6 +650,8 @@ h2,
 }
 
 .occasion-circle {
+  display: grid;
+  place-items: center;
   width: 100%;
   max-width: 87.5px;
   aspect-ratio: 1;
@@ -513,7 +665,13 @@ h2,
   margin: 10px -14px 0;
   padding: 6px 0 4px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
   scrollbar-width: none;
+}
+
+.tile-row li {
+  scroll-snap-align: start;
 }
 
 .tile-row::-webkit-scrollbar {
@@ -526,12 +684,48 @@ h2,
   margin-top: 8px;
 }
 
-.gallery-media {
-  display: grid;
-  place-items: center;
+/* Figma: 382×192 media block, radius 10. Here it holds a swipeable row of gift ideas. */
+.gallery-track {
+  display: flex;
   height: 192px;
   border-radius: 10px;
   background: var(--media);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.gallery-track::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery-slide {
+  position: relative;
+  display: grid;
+  flex: 0 0 100%;
+  place-items: center;
+  padding-bottom: 26px;
+  scroll-snap-align: start;
+  text-decoration: none;
+}
+
+.gallery-slide:focus-visible {
+  outline-offset: -4px;
+  border-radius: 10px;
+}
+
+.gallery-slide img {
+  width: 96px;
+  height: 96px;
+}
+
+.gallery-caption {
+  position: absolute;
+  inset: auto 0 12px;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: center;
 }
 
 .gallery-dots {
@@ -547,6 +741,7 @@ h2,
   border-radius: 50%;
   background: #000;
   opacity: 0.5;
+  transition: opacity 0.2s;
 }
 
 .gallery-dots .current {
@@ -567,7 +762,7 @@ h2,
   flex-direction: column;
   gap: 14px;
   width: 100%;
-  margin: 36px 0 30px;
+  margin: 36px 0 16px;
 }
 
 .row {
@@ -637,6 +832,7 @@ h2,
 
 .chip input {
   position: absolute;
+  z-index: 1;
   inset: 0;
   width: 100%;
   height: 100%;
@@ -678,6 +874,10 @@ h2,
 
 .chip-unsure span {
   border-style: dashed;
+}
+
+.hint-first {
+  margin-top: 0 !important;
 }
 
 .hint {
@@ -729,7 +929,7 @@ h2,
   align-items: center;
   gap: 21px;
   width: 100%;
-  margin: 4px 0 30px;
+  margin: 4px 0 16px;
 }
 
 .result-list li {
@@ -738,10 +938,14 @@ h2,
 }
 
 /* Details */
+.screen-details .primary-button {
+  margin-top: 28px;
+}
+
 .why {
   width: 100%;
   max-width: 356px;
-  margin: 18px 0;
+  margin: 26px 0 0;
   font-size: 16px;
   line-height: 1.45;
 }
@@ -762,7 +966,7 @@ h2,
 .reviews {
   width: calc(100% + 0px);
   max-width: 379px;
-  margin-top: 34px;
+  margin-top: 28px;
   padding: 21px 22px 26px;
   background: var(--reviews);
   font-size: 20px;
@@ -850,8 +1054,67 @@ h2,
   margin: 22px auto 0;
 }
 
+/* Feedback */
+.toast-region {
+  position: fixed;
+  z-index: 20;
+  bottom: calc(var(--nav-height) + var(--nav-gap) + 14px + env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 20px;
+  border-radius: 50px;
+  background: var(--button);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 500;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  animation: toast-in 0.18s ease-out;
+}
+
+.heart img {
+  animation: heart-pop 0.25s ease-out;
+}
+
+.heart:active {
+  transform: scale(0.9);
+}
+
+/* Each screen settles in; the fixed bottom bar stays put. */
+.screen > :not(.bottom-nav) {
+  animation: screen-in 0.22s ease-out both;
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes heart-pop {
+  50% {
+    transform: scale(1.25);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
     transition: none !important;
   }
 }

@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { StrictMode, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
@@ -25,13 +25,29 @@ import {
   type Recommendation,
   type Search,
 } from './catalog';
-import { BottomNav, GiftCard, GiftMedia, Header, HeartButton, Price, PrimaryButton, asset } from './components';
-import { navigate, toSearch, useFavorites, useRoute, useSearchForm, type SearchForm } from './storage';
+import {
+  BackButton,
+  BottomNav,
+  GiftCard,
+  GiftMedia,
+  Header,
+  HeartButton,
+  Price,
+  PrimaryButton,
+  asset,
+  illustration,
+} from './components';
+import { EMPTY_FORM, href, navigate, toSearch, useFavorites, useRoute, useSearchForm, type SearchForm } from './storage';
 
-type Favorites = ReturnType<typeof useFavorites>;
+interface Favorites {
+  ids: string[];
+  has: (id: string) => boolean;
+  toggle: (id: string) => void;
+}
 
 const HOME_OCCASIONS: Occasion[] = ['birthday', 'anniversary', 'barMitzvah', 'brit'];
 const BEST_SELLERS = ['care-kit', 'board-game', 'baby-set', 'thermal-bottle', 'wine-set'];
+const GALLERY = ['candle-set', 'headphones', 'plant', 'backpack'];
 const INITIAL_RESULTS = 2;
 
 // Illustrative reviews from the Figma mock-up. Shown only with a "sample" label.
@@ -41,13 +57,13 @@ const SAMPLE_REVIEWS = [
 ];
 
 const entries = <K extends string>(labels: Record<K, string>) => Object.entries(labels) as [K, string][];
+const gifts = (ids: string[]) => ids.map(getGift).filter((gift): gift is Gift => Boolean(gift));
 
 function Home({ favorites, onOccasion }: { favorites: Favorites; onOccasion: (occasion: Occasion) => void }) {
-  const bestSellers = BEST_SELLERS.map(getGift).filter((gift): gift is Gift => Boolean(gift));
   return (
     <main className="screen screen-home with-nav">
       <h1 className="home-title">מחפשים מתנה ?</h1>
-      <PrimaryButton onClick={() => navigate('/search')}>תעזרו לי למצא מתנה</PrimaryButton>
+      <PrimaryButton onClick={() => navigate('search')}>תעזרו לי למצא מתנה</PrimaryButton>
 
       <section aria-labelledby="occasions-title">
         <h2 id="occasions-title">מתנות לפי אירועים</h2>
@@ -56,8 +72,10 @@ function Home({ favorites, onOccasion }: { favorites: Favorites; onOccasion: (oc
           {HOME_OCCASIONS.map((occasion) => (
             <li key={occasion}>
               <button type="button" onClick={() => onOccasion(occasion)}>
-                <span className="occasion-circle" aria-hidden="true" />
-                <span dir="rtl">{OCCASIONS[occasion].replace('/', '/\u200b')}</span>
+                <span className="occasion-circle" aria-hidden="true">
+                  <img src={illustration(`catalog/occasion-${occasion}.svg`)} alt="" width={46} height={46} />
+                </span>
+                <span dir="rtl">{OCCASIONS[occasion].replace('/', '/​')}</span>
               </button>
             </li>
           ))}
@@ -67,20 +85,20 @@ function Home({ favorites, onOccasion }: { favorites: Favorites; onOccasion: (oc
       <section aria-labelledby="best-title">
         <h2 id="best-title">המתנות הנמכרות ביותר</h2>
         <ul className="tile-row">
-          {bestSellers.map((gift) => (
+          {gifts(BEST_SELLERS).map((gift) => (
             <li key={gift.id}>
               <GiftCard
                 variant="tile"
                 gift={gift}
                 saved={favorites.has(gift.id)}
                 onToggle={favorites.toggle}
+                showPrice={false}
                 footer={
                   <p className="tile-caption">
                     <span>{OCCASIONS[gift.occasions[0]]}</span>
                     <Price value={gift.price} />
                   </p>
                 }
-                showPrice={false}
               />
             </li>
           ))}
@@ -88,6 +106,55 @@ function Home({ favorites, onOccasion }: { favorites: Favorites; onOccasion: (oc
       </section>
       <BottomNav active="home" />
     </main>
+  );
+}
+
+/** The media block from the questionnaire frame, as a swipeable row of gift ideas with the four dots. */
+function Gallery() {
+  const slides = gifts(GALLERY);
+  const track = useRef<HTMLDivElement>(null);
+  const touched = useRef(false);
+  const [current, setCurrent] = useState(0);
+
+  const onScroll = () => {
+    const el = track.current;
+    if (el) setCurrent(Math.round(Math.abs(el.scrollLeft) / el.clientWidth));
+  };
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => {
+      const el = track.current;
+      if (!el || touched.current || document.hidden) return;
+      const next = (Math.round(Math.abs(el.scrollLeft) / el.clientWidth) + 1) % slides.length;
+      // In an RTL scroller, positions run from 0 down to negative values.
+      el.scrollTo({ left: -next * el.clientWidth, behavior: 'smooth' });
+    }, 4500);
+    return () => window.clearInterval(timer);
+  }, [slides.length]);
+
+  const stop = () => {
+    touched.current = true;
+  };
+
+  return (
+    <section className="gallery" aria-label="רעיונות למתנות">
+      <div className="gallery-track" ref={track} onScroll={onScroll} onPointerDown={stop} onFocus={stop} onWheel={stop}>
+        {slides.map((gift) => (
+          <a key={gift.id} className="gallery-slide" href={href('gift', gift.id)}>
+            <img src={illustration(gift.image ?? '')} alt="" width={96} height={96} />
+            <span className="gallery-caption">
+              {gift.name} · <Price value={gift.price} />
+            </span>
+          </a>
+        ))}
+      </div>
+      <div className="gallery-dots" aria-hidden="true">
+        {slides.map((gift, index) => (
+          <span key={gift.id} className={index === current ? 'current' : undefined} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -125,6 +192,7 @@ function Choices<K extends string>(props: {
             name={name}
             checked={props.selected.includes(key)}
             onChange={() => props.onPick(key)}
+            // A selected radio can be tapped again to clear the choice.
             onClick={() => !props.multiple && props.selected.includes(key) && props.onPick(key)}
           />
           <span>{label}</span>
@@ -138,7 +206,6 @@ function budgetSummary(form: SearchForm): ReactNode {
   const min = form.budgetMin.trim();
   const max = form.budgetMax.trim();
   if (!min && !max) return '';
-  // Numbers read left to right even inside Hebrew text.
   // The range itself reads left to right; the shekel sign follows it in the Hebrew flow.
   if (min && max) {
     return (
@@ -155,9 +222,16 @@ function budgetSummary(form: SearchForm): ReactNode {
   );
 }
 
-type RowKey = 'occasion' | 'relation' | 'age' | 'interests' | 'budget' | 'location';
+const ROWS = ['occasion', 'relation', 'age', 'interests', 'budget', 'location'] as const;
+type RowKey = (typeof ROWS)[number];
+type SingleField = 'occasion' | 'relation' | 'age';
 
-function Questionnaire(props: { form: SearchForm; onChange: (form: SearchForm) => void; onSubmit: () => void }) {
+function Questionnaire(props: {
+  form: SearchForm;
+  onChange: (form: SearchForm) => void;
+  onSubmit: () => void;
+  onReset: () => void;
+}) {
   const { form, onChange } = props;
   const [open, setOpen] = useState<RowKey | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,8 +240,13 @@ function Questionnaire(props: { form: SearchForm; onChange: (form: SearchForm) =
     onChange({ ...form, ...patch });
   };
   const toggleRow = (key: RowKey) => setOpen((current) => (current === key ? null : key));
-  const pick = <K extends 'occasion' | 'relation' | 'age' | 'fulfilment' | 'region'>(field: K, key: SearchForm[K]) =>
-    set({ [field]: form[field] === key ? null : key } as Partial<SearchForm>);
+
+  /** Single-choice rows move on to the next question once answered. */
+  const pickSingle = <K extends SingleField>(field: K, key: SearchForm[K]) => {
+    const cleared = form[field] === key;
+    set({ [field]: cleared ? null : key } as Partial<SearchForm>);
+    if (!cleared) setOpen(ROWS[ROWS.indexOf(field) + 1]);
+  };
   const toggleInterest = (interest: Interest) =>
     set({
       unsureInterests: false,
@@ -194,34 +273,43 @@ function Questionnaire(props: { form: SearchForm; onChange: (form: SearchForm) =
       : form.fulfilment === 'pickup'
         ? `איסוף${form.region ? `, ${REGIONS[form.region]}` : ''}`
         : '';
+  const dirty = JSON.stringify(form) !== JSON.stringify(EMPTY_FORM);
+  const budgetField = (label: string, field: 'budgetMin' | 'budgetMax') => (
+    <label>
+      <span>{label}</span>
+      <input
+        id={field}
+        dir="ltr"
+        type="number"
+        inputMode="numeric"
+        min={0}
+        step={10}
+        placeholder="0"
+        value={form[field]}
+        onChange={(e) => set({ [field]: e.target.value })}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? 'budget-error' : undefined}
+      />
+    </label>
+  );
 
   return (
     <main className="screen screen-search">
-      <div className="gallery" aria-hidden="true">
-        <div className="gallery-media">
-          <img src={asset('image-placeholder.svg')} alt="" width={48} height={48} />
-        </div>
-        <div className="gallery-dots" dir="ltr">
-          <span />
-          <span />
-          <span className="current" />
-          <span />
-        </div>
-      </div>
-
+      <Gallery />
       <form className="questionnaire" onSubmit={submit} noValidate>
         <h1>למי המתנה?</h1>
         <div className="rows">
           <Row label="סוג האירוע" value={form.occasion ? OCCASIONS[form.occasion] : ''} open={open === 'occasion'} onToggle={() => toggleRow('occasion')}>
-            <Choices legend="סוג האירוע" options={OCCASIONS} selected={form.occasion ? [form.occasion] : []} onPick={(k) => pick('occasion', k)} />
+            <Choices legend="סוג האירוע" options={OCCASIONS} selected={form.occasion ? [form.occasion] : []} onPick={(k) => pickSingle('occasion', k)} />
           </Row>
           <Row label="קרבה למקבל המתנה" value={form.relation ? RELATIONS[form.relation] : ''} open={open === 'relation'} onToggle={() => toggleRow('relation')}>
-            <Choices legend="קרבה למקבל המתנה" options={RELATIONS} selected={form.relation ? [form.relation] : []} onPick={(k) => pick('relation', k)} />
+            <Choices legend="קרבה למקבל המתנה" options={RELATIONS} selected={form.relation ? [form.relation] : []} onPick={(k) => pickSingle('relation', k)} />
           </Row>
           <Row label="גיל מקבל המתנה" value={form.age ? AGE_GROUPS[form.age] : ''} open={open === 'age'} onToggle={() => toggleRow('age')}>
-            <Choices legend="גיל מקבל המתנה" options={AGE_GROUPS} selected={form.age ? [form.age] : []} onPick={(k) => pick('age', k)} />
+            <Choices legend="גיל מקבל המתנה" options={AGE_GROUPS} selected={form.age ? [form.age] : []} onPick={(k) => pickSingle('age', k)} />
           </Row>
           <Row label="תחומי עניין" value={interestsValue} open={open === 'interests'} onToggle={() => toggleRow('interests')}>
+            <p className="hint hint-first">אפשר לבחור כמה</p>
             <Choices legend="תחומי עניין, אפשר לבחור כמה" options={INTERESTS} selected={form.interests} multiple onPick={toggleInterest} />
             <label className="chip chip-unsure">
               <input
@@ -234,14 +322,8 @@ function Questionnaire(props: { form: SearchForm; onChange: (form: SearchForm) =
           </Row>
           <Row label="תקציב" value={budgetSummary(form)} open={open === 'budget'} onToggle={() => toggleRow('budget')}>
             <div className="budget">
-              <label>
-                <span>מינימום (₪)</span>
-                <input dir="ltr" type="number" inputMode="numeric" min={0} step={10} value={form.budgetMin} onChange={(e) => set({ budgetMin: e.target.value })} aria-invalid={error ? true : undefined} aria-describedby={error ? 'budget-error' : undefined} />
-              </label>
-              <label>
-                <span>מקסימום (₪)</span>
-                <input dir="ltr" type="number" inputMode="numeric" min={0} step={10} value={form.budgetMax} onChange={(e) => set({ budgetMax: e.target.value })} aria-invalid={error ? true : undefined} aria-describedby={error ? 'budget-error' : undefined} />
-              </label>
+              {budgetField('מינימום (₪)', 'budgetMin')}
+              {budgetField('מקסימום (₪)', 'budgetMax')}
             </div>
             {error && (
               <p id="budget-error" className="error" role="alert">
@@ -250,47 +332,66 @@ function Questionnaire(props: { form: SearchForm; onChange: (form: SearchForm) =
             )}
           </Row>
           <Row label="מיקום" value={locationValue} open={open === 'location'} onToggle={() => toggleRow('location')}>
-            <Choices legend="אופן קבלה" options={{ pickup: 'איסוף עצמי', delivery: 'משלוח' }} selected={form.fulfilment ? [form.fulfilment] : []} onPick={(k) => pick('fulfilment', k)} />
+            <Choices
+              legend="אופן קבלה"
+              options={{ pickup: 'איסוף עצמי', delivery: 'משלוח' }}
+              selected={form.fulfilment ? [form.fulfilment] : []}
+              onPick={(k) => set({ fulfilment: form.fulfilment === k ? null : k })}
+            />
             {form.fulfilment === 'pickup' && (
               <>
                 <p className="hint">באיזה אזור נוח לאסוף?</p>
-                <Choices legend="אזור איסוף" options={REGIONS} selected={form.region ? [form.region] : []} onPick={(k) => pick('region', k)} />
+                <Choices legend="אזור איסוף" options={REGIONS} selected={form.region ? [form.region] : []} onPick={(k) => set({ region: form.region === k ? null : k })} />
               </>
             )}
           </Row>
         </div>
-        <PrimaryButton type="submit">מצא לי מתנות מתאימות</PrimaryButton>
+        <div className="sticky-cta">
+          <PrimaryButton type="submit">מצא לי מתנות מתאימות</PrimaryButton>
+        </div>
+        {dirty && (
+          <button
+            type="button"
+            className="text-link"
+            onClick={() => {
+              setError(null);
+              setOpen(null);
+              props.onReset();
+            }}
+          >
+            ניקוי הבחירות
+          </button>
+        )}
       </form>
     </main>
   );
 }
 
-function EditSearchLink() {
-  return (
-    <a className="text-link" href="#/search">
-      עריכת החיפוש
-    </a>
-  );
-}
-
-function Results({ search, results, favorites }: { search: Search; results: Recommendation[]; favorites: Favorites }) {
-  const [shown, setShown] = useState(INITIAL_RESULTS);
-  const visible = results.slice(0, shown);
-
+function Results(props: {
+  search: Search;
+  results: Recommendation[];
+  favorites: Favorites;
+  expanded: boolean;
+  onExpand: () => void;
+}) {
+  const { results, favorites } = props;
   if (results.length === 0) {
     return (
       <main className="screen screen-results">
         <h1>לא מצאנו מתנות מתאימות</h1>
         <p className="empty">אין בקטלוג פריט שמתאים לכל הבחירות. נסו להרחיב את התקציב, לשנות אזור או לבחור פחות תחומי עניין.</p>
-        <PrimaryButton onClick={() => navigate('/search')}>עריכת החיפוש</PrimaryButton>
+        <PrimaryButton onClick={() => navigate('search')}>עריכת החיפוש</PrimaryButton>
       </main>
     );
   }
 
+  const visible = props.expanded ? results : results.slice(0, INITIAL_RESULTS);
   return (
     <main className="screen screen-results">
-      <h1>{searchTitle(search)}</h1>
-      <EditSearchLink />
+      <h1>{searchTitle(props.search)}</h1>
+      <a className="text-link" href={href('search')}>
+        עריכת החיפוש
+      </a>
       <ul className="result-list">
         {visible.map(({ gift }) => (
           <li key={gift.id}>
@@ -298,11 +399,13 @@ function Results({ search, results, favorites }: { search: Search; results: Reco
           </li>
         ))}
       </ul>
-      {shown < results.length ? (
-        <PrimaryButton onClick={() => setShown(results.length)}>להמלצות נוספות</PrimaryButton>
+      {visible.length < results.length ? (
+        <div className="sticky-cta">
+          <PrimaryButton onClick={props.onExpand}>להמלצות נוספות</PrimaryButton>
+        </div>
       ) : (
-        <p className="empty" role="status">
-          {results.length > INITIAL_RESULTS ? 'אלה כל ההמלצות לחיפוש הזה.' : ''}
+        <p className="end-note" role="status">
+          {results.length === 1 ? 'זו ההמלצה היחידה לחיפוש הזה.' : `אלה כל ${results.length} ההמלצות לחיפוש הזה.`}
         </p>
       )}
     </main>
@@ -323,7 +426,8 @@ function Details(props: { gift: Gift; search: Search | null; reasons: string[]; 
   const { gift, favorites } = props;
   return (
     <main className="screen screen-details with-nav">
-      <h1>{searchTitle(props.search)}</h1>
+      <BackButton />
+      <h1>{props.search ? searchTitle(props.search) : 'פרטי המתנה'}</h1>
       <article className="gift-card gift-card-detail">
         <GiftMedia gift={gift} />
         <div className="info-strip">
@@ -332,6 +436,9 @@ function Details(props: { gift: Gift; search: Search | null; reasons: string[]; 
         </div>
         <HeartButton gift={gift} saved={favorites.has(gift.id)} onToggle={favorites.toggle} size="large" />
       </article>
+
+      {/* Figma order: the purchase action sits directly under the card, clear of the bottom bar. */}
+      <PrimaryButton onClick={() => navigate('stores', gift.id)}>איפה ניתן לרכוש?</PrimaryButton>
 
       <section className="why" aria-labelledby="why-title">
         <h2 id="why-title">למה זה מתאים?</h2>
@@ -344,8 +451,6 @@ function Details(props: { gift: Gift; search: Search | null; reasons: string[]; 
           </ul>
         )}
       </section>
-
-      <PrimaryButton onClick={() => navigate(`/stores/${gift.id}`)}>איפה ניתן לרכוש?</PrimaryButton>
 
       <section className="reviews" aria-labelledby="reviews-title">
         <h2 id="reviews-title">ביקורות על המוצר</h2>
@@ -371,9 +476,10 @@ function Stores({ gift, search, favorites }: { gift: Gift; search: Search | null
   const count = stores.length === 1 ? 'נמצאה חנות אחת' : `נמצאו ${stores.length} חנויות`;
   return (
     <main className="screen screen-stores with-nav">
+      <BackButton />
       <h1>{stores.length === 0 ? 'לא נמצאו חנויות' : count}</h1>
       <p className="context">
-        עבור <a href={`#/gift/${gift.id}`}>{gift.name}</a>, <Price value={gift.price} />
+        עבור <a href={href('gift', gift.id)}>{gift.name}</a>, <Price value={gift.price} />
       </p>
       <ul className="store-list">
         {stores.map((store) => (
@@ -414,12 +520,15 @@ function Stores({ gift, search, favorites }: { gift: Gift; search: Search | null
 }
 
 function FavoritesScreen({ favorites }: { favorites: Favorites }) {
-  const saved = favorites.ids.map(getGift).filter((gift): gift is Gift => Boolean(gift));
+  const saved = gifts(favorites.ids);
   return (
     <main className="screen screen-favorites with-nav">
       <h1>המתנות שאהבתי</h1>
       {saved.length === 0 ? (
-        <p className="empty">כאן יופיעו המתנות שסימנת בלב</p>
+        <>
+          <p className="empty">כאן יופיעו המתנות שסימנת בלב</p>
+          <PrimaryButton onClick={() => navigate('search')}>למצוא מתנה</PrimaryButton>
+        </>
       ) : (
         <ul className="grid">
           {saved.map((gift) => (
@@ -438,7 +547,8 @@ function NotFound() {
   return (
     <main className="screen with-nav">
       <h1>העמוד לא נמצא</h1>
-      <PrimaryButton onClick={() => navigate('/')}>חזרה לדף הבית</PrimaryButton>
+      <p className="empty">ייתכן שהקישור ישן או שהמתנה הוסרה מהקטלוג.</p>
+      <PrimaryButton onClick={() => navigate()}>חזרה לדף הבית</PrimaryButton>
       <BottomNav />
     </main>
   );
@@ -446,16 +556,38 @@ function NotFound() {
 
 function App() {
   const route = useRoute();
-  const favorites = useFavorites();
-  const { form, submitted, setForm, submit } = useSearchForm();
+  const stored = useFavorites();
+  const { form, submitted, setForm, submit, reset } = useSearchForm();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [toast, setToast] = useState<{ text: string; key: number } | null>(null);
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+
   const search = useMemo(() => (submitted ? toSearch(form) : null), [form, submitted]);
+  const searchKey = useMemo(() => JSON.stringify(search), [search]);
   const results = useMemo(() => (search ? recommend(search) : []), [search]);
   const [page, id] = route;
   const gift = id ? getGift(id) : undefined;
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  // Saving gives the same feedback from every screen: the heart fills and a short message appears.
+  const toggleFavorite = useCallback(
+    (giftId: string) => {
+      const saved = stored.ids.includes(giftId);
+      stored.toggle(giftId);
+      setToast({ text: saved ? 'הוסר מהמועדפים' : 'נשמר במועדפים', key: Date.now() });
+    },
+    [stored],
+  );
+  const favorites: Favorites = { ids: stored.ids, has: stored.has, toggle: toggleFavorite };
+
   // The results screen needs a submitted search; without one, start from the questionnaire.
   useEffect(() => {
-    if (page === 'results' && !search) navigate('/search');
+    if (page === 'results' && !search) navigate('search');
   }, [page, search]);
 
   let screen: ReactNode;
@@ -465,7 +597,7 @@ function App() {
         favorites={favorites}
         onOccasion={(occasion) => {
           setForm({ ...form, occasion });
-          navigate('/search');
+          navigate('search');
         }}
       />
     );
@@ -474,15 +606,23 @@ function App() {
       <Questionnaire
         form={form}
         onChange={setForm}
+        onReset={reset}
         onSubmit={() => {
           submit(form);
-          navigate('/results');
+          navigate('results');
         }}
       />
     );
-  } else if (page === 'results' && search) {
-    // Keyed by the search so "show more" resets for a new search.
-    screen = <Results key={JSON.stringify(search)} search={search} results={results} favorites={favorites} />;
+  } else if (page === 'results') {
+    screen = search && (
+      <Results
+        search={search}
+        results={results}
+        favorites={favorites}
+        expanded={expandedFor === searchKey}
+        onExpand={() => setExpandedFor(searchKey)}
+      />
+    );
   } else if (page === 'gift' && gift) {
     const reasons = results.find((r) => r.gift.id === gift.id)?.reasons ?? [];
     screen = <Details gift={gift} search={reasons.length ? search : null} reasons={reasons} favorites={favorites} />;
@@ -491,19 +631,31 @@ function App() {
     screen = <Stores gift={gift} search={inResults ? search : null} favorites={favorites} />;
   } else if (page === 'favorites') {
     screen = <FavoritesScreen favorites={favorites} />;
-  } else if (page === 'results') {
-    screen = null;
   } else {
     screen = <NotFound />;
   }
 
   return (
     <div className="app">
-      <Header />
-      {screen}
+      <Header menuOpen={menuOpen} onMenu={setMenuOpen} favoriteCount={stored.ids.length} />
+      {/* Keyed by route so each screen fades in and starts with fresh local state. */}
+      <div className="screen-wrap" key={route.join('-')}>
+        {screen}
+      </div>
+      <div className="toast-region" role="status" aria-live="polite">
+        {toast && (
+          <p className="toast" key={toast.key}>
+            {toast.text}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
+
+// Hosts that wrap the page in their own document may not carry these from index.html.
+document.documentElement.lang = 'he';
+document.documentElement.dir = 'rtl';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

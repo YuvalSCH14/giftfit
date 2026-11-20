@@ -28,25 +28,27 @@ export function toSearch(form: SearchForm): Search {
   };
 }
 
-function read<T>(storage: Storage | undefined, key: string, fallback: T): T {
+type StorageName = 'localStorage' | 'sessionStorage';
+
+function read<T>(storage: StorageName, key: string, fallback: T): T {
   try {
-    const raw = storage?.getItem(key);
+    const raw = window[storage].getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
   }
 }
 
-function write(storage: Storage | undefined, key: string, value: unknown) {
+function write(storage: StorageName, key: string, value: unknown) {
   try {
-    storage?.setItem(key, JSON.stringify(value));
+    window[storage].setItem(key, JSON.stringify(value));
   } catch {
     // Storage can be unavailable (private mode); the app still works for the session.
   }
 }
 
-const local = () => (typeof window === 'undefined' ? undefined : window.localStorage);
-const session = () => (typeof window === 'undefined' ? undefined : window.sessionStorage);
+const local = (): StorageName => 'localStorage';
+const session = (): StorageName => 'sessionStorage';
 
 /** Favorite gift ids, shared by every screen and kept in localStorage. */
 export function useFavorites() {
@@ -89,16 +91,32 @@ export function useSearchForm() {
 
   const setForm = useCallback((form: SearchForm) => setState((s) => ({ ...s, form })), []);
   const submit = useCallback((form: SearchForm) => setState({ form, submitted: true }), []);
-  return { form: state.form, submitted: state.submitted, setForm, submit };
+  const reset = useCallback(() => setState({ form: EMPTY_FORM, submitted: false }), []);
+  return { form: state.form, submitted: state.submitted, setForm, submit, reset };
 }
 
-/** Minimal hash router: "#/gift/care-kit" becomes ["gift", "care-kit"]. */
+export type Page = 'search' | 'results' | 'gift' | 'stores' | 'favorites';
+
+/** Link target for a screen: "#gift-care-kit", "#search", or "#" for home. */
+export function href(page?: Page, id?: string): string {
+  if (!page) return '#';
+  return id ? `#${page}-${id}` : `#${page}`;
+}
+
+function parseHash(): string[] {
+  // Plain names only ("#gift-care-kit"), so links also survive hosts that drop "#/path" hashes.
+  const hash = decodeURIComponent(window.location.hash.replace(/^#\/?/, ''));
+  if (!hash) return [];
+  const split = hash.search(/[-/]/);
+  return split === -1 ? [hash] : [hash.slice(0, split), hash.slice(split + 1)];
+}
+
+/** Minimal hash router: "#gift-care-kit" becomes ["gift", "care-kit"]. */
 export function useRoute(): string[] {
-  const parse = () => window.location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
-  const [route, setRoute] = useState<string[]>(parse);
+  const [route, setRoute] = useState<string[]>(parseHash);
   useEffect(() => {
     const onChange = () => {
-      setRoute(parse());
+      setRoute(parseHash());
       window.scrollTo(0, 0);
     };
     window.addEventListener('hashchange', onChange);
@@ -107,6 +125,11 @@ export function useRoute(): string[] {
   return route;
 }
 
-export function navigate(path: string) {
-  window.location.hash = path;
+export function navigate(page?: Page, id?: string) {
+  window.location.hash = href(page, id).slice(1);
+}
+
+export function goBack() {
+  if (window.history.length > 1) window.history.back();
+  else navigate();
 }
