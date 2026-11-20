@@ -603,7 +603,7 @@ h2,
 
 /* Home */
 .home-title {
-  margin-top: 108px !important;
+  margin-top: 34px !important;
   font-size: 36px;
   letter-spacing: -0.54px;
 }
@@ -1122,10 +1122,479 @@ h2,
 /* Short phones: a lower details card keeps the purchase action above the bottom bar. */
 @media (max-height: 760px) {
   .gift-card-detail .media {
-    height: 236px;
+    height: 190px;
+  }
+
+  .gift-card-detail .media-image {
+    height: 76%;
   }
 
   .screen-details .primary-button {
     margin-top: 20px;
   }
+}
+
+/* ---- Beyond the six Figma frames: search, accounts, reviews, reminders, catalog manager ---- */
+
+/* Search bar: based on the search component in the Figma file (360×56, fully rounded). */
+.search-bar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 360px;
+  height: 56px;
+  margin-top: 10px;
+  padding-inline: 20px 6px;
+  border-radius: 28px;
+  background: #ece8e8;
+}
+
+.search-bar:focus-within {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.search-bar input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: none;
+  font-size: 16px;
+}
+
+.search-bar input::placeholder {
+  color: #49454f;
+}
+
+.search-bar input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-bar button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+}
+
+.screen-home .home-title {
+  margin-top: 34px !important;
+}
+
+.screen-find .search-bar {
+  margin: 14px 0 4px;
+}
+
+/* Rating badge, with the star from the home frame. */
+.rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.rating img {
+  width: 14px;
+  height: 20px;
+}
+
+.card-rating {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 0 6px;
+  border-radius: 50px;
+  background: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+}
+
+.media-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.primary-button-quiet {
+  min-height: 52px;
+  margin-top: 12px !important;
+  border: 2px solid var(--button);
+  background: #fff;
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.primary-button-quiet:hover {
+  background: #f3f0f0;
+}
+
+.primary-button[disabled] {
+  opacity: 0.6;
+}
+
+.notice {
+  max-width: 346px;
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #f3f0f0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.store-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 8px 22px;
+  border-radius: 50px;
+  background: var(--button);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* Reviews */
+.reviews h3 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.reviews-summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px 0 14px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.reviews-summary .rating {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.reviews-empty,
+.reviews-cta {
+  margin: 10px 0;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.review p {
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.review .review-head {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.review .review-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: #4a4a4a;
+}
+
+.review-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(0, 0, 0, 0.2);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.star-picker {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.star-picker legend {
+  margin: 0 auto 4px;
+  font-size: 15px;
+}
+
+.star-picker label {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+
+.star-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.star-picker input:focus-visible + img {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Forms */
+.form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  width: 100%;
+  max-width: 356px;
+  margin-top: 18px;
+}
+
+.form h2 {
+  margin-top: 10px;
+  font-size: 24px;
+}
+
+.form .primary-button,
+.form .chip-button,
+.form .text-link {
+  align-self: center;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 14px;
+  border: 1.5px solid var(--field-border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field small {
+  font-size: 13px;
+  font-weight: 400;
+  color: #4a4a4a;
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.choices-legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.check input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--button);
+}
+
+.chip-button {
+  min-height: 40px;
+  padding: 6px 16px;
+  border: 1.5px solid var(--field-border);
+  border-radius: 50px;
+  background: #fff;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  max-width: 356px;
+  margin-top: 16px;
+  padding: 4px;
+  border-radius: 50px;
+  background: #ece8e8;
+}
+
+.tabs button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 50px;
+  background: none;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.tabs button[aria-selected='true'] {
+  background: var(--button);
+  color: #fff;
+}
+
+.danger-zone {
+  margin-top: 8px;
+  padding: 14px;
+  border: 1.5px solid #b00020;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.screen-account > .text-link,
+.screen-account > .primary-button {
+  margin-top: 14px;
+}
+
+.link-list,
+.admin-list,
+.reminder-list {
+  width: 100%;
+  max-width: 356px;
+  margin-top: 16px;
+}
+
+.link-list a,
+.admin-list a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 4px;
+  border-bottom: 1px solid #e4dfde;
+  font-size: 20px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.link-list a span {
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 50px;
+  background: #ece8e8;
+  font-size: 15px;
+  text-align: center;
+}
+
+.admin-list a {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  font-size: 17px;
+}
+
+.admin-meta {
+  font-size: 14px;
+  font-weight: 400;
+  color: #4a4a4a;
+}
+
+.store-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 1.5px solid var(--field-border);
+  border-radius: 18px;
+  background: var(--field);
+}
+
+.store-fields legend {
+  padding: 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Reminders */
+.reminder {
+  padding: 14px 16px;
+  border: 1.5px solid #d8d2d1;
+  border-radius: 18px;
+}
+
+.reminder + .reminder {
+  margin-top: 10px;
+}
+
+.reminder-soon {
+  border-color: var(--field-border);
+  background: var(--field);
+}
+
+.reminder-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.reminder-when {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.reminder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+a.icon-button {
+  border-radius: 12px;
 }

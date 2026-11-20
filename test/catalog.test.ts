@@ -1,18 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CATALOG,
   EMPTY_SEARCH,
   MAX_RECOMMENDATIONS,
   OCCASIONS,
-  complementary,
-  getGift,
-  recommend,
+  closestMatches,
+  complementary as complementaryIn,
+  parseGift,
+  recommend as recommendIn,
+  searchCatalog,
   searchTitle,
   storesFor,
   validateSearch,
+  type Gift,
   type Occasion,
   type Search,
 } from '../src/catalog';
+import { DEMO_CATALOG as CATALOG } from './fixtures/demo-catalog';
+
+const recommend = (search: Search) => recommendIn(search, CATALOG);
+const complementary = (gift: Gift) => complementaryIn(gift, CATALOG);
+const getGift = (id: string) => CATALOG.find((gift) => gift.id === id);
 
 const friendCare: Search = {
   ...EMPTY_SEARCH,
@@ -32,6 +39,7 @@ describe('catalog', () => {
     expect(CATALOG).toHaveLength(12);
     expect(new Set(CATALOG.map((g) => g.id)).size).toBe(12);
     expect(CATALOG.flatMap((g) => g.stores).every((s) => s.url === undefined)).toBe(true);
+    for (const gift of CATALOG) expect(parseGift(gift)).toEqual({ gift });
   });
 
   it('has tagged gifts for every occasion, including the home shortcuts', () => {
@@ -75,7 +83,7 @@ describe('recommend', () => {
     const haifa = recommend({ ...EMPTY_SEARCH, fulfilment: 'pickup', region: 'haifa' });
     expect(haifa.length).toBeGreaterThan(0);
     for (const { gift } of haifa) {
-      expect(gift.stores.some((s) => s.region === 'haifa')).toBe(true);
+      expect(gift.stores.some((s) => s.regions.includes('haifa'))).toBe(true);
     }
     expect(ids({ ...friendCare, region: 'beerSheva' })).not.toContain('care-kit');
   });
@@ -125,7 +133,7 @@ describe('helpers', () => {
   it('lists only the stores that fit a pickup search', () => {
     const stores = storesFor(getGift('care-kit')!, friendCare);
     expect(stores).toHaveLength(1);
-    expect(stores[0].region).toBe('telAviv');
+    expect(stores[0].regions).toEqual(['telAviv']);
     expect(storesFor(getGift('care-kit')!, null)).toHaveLength(3);
   });
 
@@ -133,5 +141,48 @@ describe('helpers', () => {
     const others = complementary(getGift('care-kit')!);
     expect(others.map((g) => g.id)).toEqual(['candle-set']);
     expect(complementary(getGift('candle-set')!).length).toBe(2);
+  });
+});
+
+describe('closestMatches', () => {
+  it('drops the interests first and says so, never the budget', () => {
+    const search: Search = { ...friendCare, interests: ['tech'] };
+    expect(recommend(search)).toEqual([]);
+    const { results, relaxed } = closestMatches(search, CATALOG);
+    expect(relaxed).toEqual(['interests']);
+    expect(results.map((r) => r.gift.id)).toContain('care-kit');
+    for (const { gift } of results) expect(gift.price).toBeGreaterThanOrEqual(200);
+  });
+
+  it('returns nothing when even the budget alone cannot be met', () => {
+    expect(closestMatches({ ...friendCare, budgetMin: 5000, budgetMax: 6000 }, CATALOG).results).toEqual([]);
+  });
+});
+
+describe('searchCatalog', () => {
+  it('finds gifts by name, tag and with a Hebrew prefix letter', () => {
+    expect(searchCatalog('בקבוק', CATALOG).map((g) => g.id)).toEqual(['thermal-bottle']);
+    expect(searchCatalog('טיפוח', CATALOG).map((g) => g.id)).toEqual(['care-kit', 'candle-set']);
+    expect(searchCatalog('לתינוק', CATALOG).map((g) => g.id)).toContain('baby-blanket');
+    expect(searchCatalog('ספר בישול', CATALOG)[0].id).toBe('cookbook');
+    expect(searchCatalog('   ', CATALOG)).toEqual([]);
+    expect(searchCatalog('מטוס', CATALOG)).toEqual([]);
+  });
+});
+
+describe('parseGift', () => {
+  const base = getGift('care-kit')!;
+  it('rejects unsafe links and missing fields with a Hebrew message', () => {
+    expect(parseGift({ ...base, stores: [{ name: 'חנות', url: 'javascript:alert(1)', regions: [], delivery: true }] })).toHaveProperty('error');
+    expect(parseGift({ ...base, stores: [{ name: 'חנות', url: 'http://example.com', regions: [], delivery: true }] })).toHaveProperty('error');
+    expect(parseGift({ ...base, price: -5 })).toHaveProperty('error');
+    expect(parseGift({ ...base, id: 'Bad Id!' })).toHaveProperty('error');
+    expect(parseGift({ ...base, occasions: ['wedding'] })).toHaveProperty('error');
+    expect(parseGift({ ...base, stores: [] })).toHaveProperty('error');
+  });
+
+  it('keeps a valid https link and drops unknown tags', () => {
+    const parsed = parseGift({ ...base, interests: ['care', 'nonsense'], stores: [{ name: 'חנות', url: 'https://example.com/p/1', regions: ['telAviv', 'mars'], delivery: true }] });
+    expect(parsed).toMatchObject({ gift: { interests: ['care'], stores: [{ url: 'https://example.com/p/1', regions: ['telAviv'], delivery: true }] } });
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CATALOG, EMPTY_SEARCH, type Search } from './catalog';
+import { EMPTY_SEARCH, type Search } from './catalog';
 
 const FAVORITES_KEY = 'giftfit:favorites';
 const FORM_KEY = 'giftfit:search-form';
@@ -54,8 +54,7 @@ const session = (): StorageName => 'sessionStorage';
 export function useFavorites() {
   const [ids, setIds] = useState<string[]>(() => {
     const stored = read<unknown>(local(), FAVORITES_KEY, []);
-    const known = new Set(CATALOG.map((gift) => gift.id));
-    return Array.isArray(stored) ? stored.filter((id): id is string => known.has(id as string)) : [];
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
   });
 
   useEffect(() => write(local(), FAVORITES_KEY, ids), [ids]);
@@ -72,7 +71,11 @@ export function useFavorites() {
     setIds((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
   }, []);
 
-  return { ids, toggle, has: (id: string) => ids.includes(id) };
+  const has = useCallback((id: string) => ids.includes(id), [ids]);
+  /** Replaces the list, for example with the favorites of the account that just signed in. */
+  const replace = useCallback((next: string[]) => setIds(next), []);
+
+  return { ids, toggle, has, replace };
 }
 
 interface StoredForm {
@@ -95,7 +98,7 @@ export function useSearchForm() {
   return { form: state.form, submitted: state.submitted, setForm, submit, reset };
 }
 
-export type Page = 'search' | 'results' | 'gift' | 'stores' | 'favorites';
+export type Page = 'search' | 'results' | 'gift' | 'stores' | 'favorites' | 'find' | 'profile' | 'reminders' | 'admin';
 
 /** Link target for a screen: "#gift-care-kit", "#search", or "#" for home. */
 export function href(page?: Page, id?: string): string {
