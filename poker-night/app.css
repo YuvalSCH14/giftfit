@@ -103,15 +103,14 @@ em { font-style: normal; font-weight: 600; }
 .bar-title { flex: 1; min-width: 0; text-align: center; display: grid; line-height: 1.2; }
 .bar-title b { font: 600 17px/1.2 var(--display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar-title small { font-size: 12.5px; color: var(--on-felt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.icon-btn { flex: none; width: var(--tap); height: var(--tap); margin-inline: -6px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--on-felt); }
-.icon-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn { flex: none; width: var(--tap); height: var(--tap); display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--on-felt); }
+.icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .icon-btn svg.solid { fill: currentColor; stroke: none; }
 .icon-btn:active { background: var(--on-felt-wash); }
-.icon-btn.dark { color: var(--ink-2); margin: 0; }
+.icon-btn.dark { color: var(--ink-2); }
 .icon-btn.dark:active { background: var(--card-inset); }
-.who-btn { flex: none; width: var(--tap); height: var(--tap); margin-right: -4px; display: grid; place-items: center; border: 0; background: none; padding: 0; }
-.pill-btn { flex: none; min-height: 36px; padding: 0 14px; border: 1px solid var(--on-felt-line); border-radius: 999px; background: none; font-size: 14.5px; font-weight: 600; color: var(--on-felt); }
-.pill-btn:active { background: var(--on-felt-wash); }
+.who-btn { flex: none; width: var(--tap); height: var(--tap); display: grid; place-items: center; border: 0; border-radius: 50%; padding: 0; }
+.pill-btn { flex: none; min-height: 40px; padding: 0 16px; border: 0; border-radius: 999px; font-size: 14.5px; font-weight: 600; color: var(--on-felt); }
 .dots { flex: 1; display: flex; justify-content: center; gap: 7px; }
 .dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--on-felt-line); transition: width 0.2s, background 0.2s; }
 .dots i.done { background: var(--on-felt-2); }
@@ -134,27 +133,63 @@ em { font-style: normal; font-weight: 600; }
 .fine { font-size: 13px; color: var(--on-felt-2); }
 
 .dock { flex: none; display: grid; gap: 6px; padding: 8px 0 calc(12px + var(--safe-b)); }
-.dock:has(+ .tabs) { padding-bottom: 8px; }
+.dock:has(+ .tabs) { padding-bottom: 10px; }
 .dock-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; }
 .dock-note { text-align: center; color: var(--on-felt-2); font-size: 15px; min-height: 54px; display: grid; place-items: center; }
 
+/* ── Liquid Glass ────────────────────────────
+ * The navigation floats above the table as pieces of clear glass: the tab bar, the buttons in
+ * the top bar and the step switcher inside a game. Each piece blurs and brightens what is behind
+ * it, catches light along its top-left and bottom-right rim, and casts a soft shadow. A brighter
+ * lens marks the current item and slides, stretching a little, when it changes.
+ */
+.glass {
+  position: relative; isolation: isolate;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.08) 42%, rgba(255, 255, 255, 0.13) 100%);
+  -webkit-backdrop-filter: blur(16px) saturate(1.9) brightness(1.12); backdrop-filter: blur(16px) saturate(1.9) brightness(1.12);
+  box-shadow:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.5), inset 0 -1px 0.5px rgba(255, 255, 255, 0.14),
+    inset 0 12px 16px -14px rgba(255, 255, 255, 0.55), inset 0 -10px 14px -12px rgba(0, 0, 0, 0.14),
+    0 10px 28px -10px rgba(0, 0, 0, 0.6), 0 2px 5px rgba(0, 0, 0, 0.22);
+  transition: transform 0.18s cubic-bezier(0.3, 1.5, 0.5, 1), background 0.15s;
+}
+/* The rim: a hairline that is bright where the light lands and nearly gone in between. */
+.glass::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.1) 28%, rgba(255, 255, 255, 0.03) 62%, rgba(255, 255, 255, 0.5) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+}
+button.glass:active { transform: scale(1.08); background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.14)); }
+.lens {
+  position: absolute; z-index: -1; top: var(--pad); bottom: var(--pad); left: var(--pad); width: calc((100% - 2 * var(--pad)) / var(--n)); border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.36) 0%, rgba(255, 255, 255, 0.12) 55%, rgba(255, 255, 255, 0.2) 100%);
+  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.65), inset 0 -1px 0.5px rgba(255, 255, 255, 0.2), inset 0 0 12px rgba(255, 255, 255, 0.12), 0 3px 10px rgba(0, 0, 0, 0.28);
+  transform: translateX(calc(var(--i) * 100%)); animation: lens-slide 0.5s cubic-bezier(0.3, 1.3, 0.45, 1) both;
+}
+@keyframes lens-slide {
+  0% { transform: translateX(calc(var(--from) * 100%)); }
+  40% { transform: translateX(calc((var(--from) * 0.5 + var(--i) * 0.5) * 100%)) scale(1.14, 0.88); }
+  100% { transform: translateX(calc(var(--i) * 100%)); }
+}
+
 .tabs {
-  flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-inline: -8px;
-  padding: 6px 0 calc(6px + var(--safe-b)); border-top: 1px solid rgba(244, 239, 226, 0.14);
+  --pad: 5px;
+  flex: none; display: grid; grid-template-columns: repeat(3, 1fr); padding: var(--pad); border-radius: 999px;
+  margin: 2px 0 max(10px, calc(var(--safe-b) - 10px));
 }
 .tabs button {
-  position: relative; min-height: 50px; padding: 4px 2px; border: 0; border-radius: 14px; background: none; color: var(--on-felt-2);
-  display: grid; justify-items: center; align-content: center; gap: 2px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
-  transition: background 0.15s, color 0.15s;
+  position: relative; min-height: 52px; padding: 4px 2px; border: 0; border-radius: 999px; background: none; color: var(--on-felt-2);
+  display: grid; justify-items: center; align-content: center; gap: 1px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+  transition: color 0.2s, transform 0.18s cubic-bezier(0.3, 1.5, 0.5, 1);
 }
-.tabs svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.tabs button:active { background: rgba(244, 239, 226, 0.08); }
-.tabs button[aria-selected='true'] { color: var(--on-felt); background: rgba(244, 239, 226, 0.13); }
+.tabs svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tabs button:active { transform: scale(1.08); }
+.tabs button[aria-selected='true'] { color: #fff; }
 .badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--red); color: #fff; font: 700 11px/18px var(--body); font-style: normal; text-align: center; }
 
-.game-nav { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; margin-bottom: 4px; border-radius: 999px; background: rgba(0, 0, 0, 0.22); }
-.game-nav button { min-height: 34px; border: 0; border-radius: 999px; background: none; color: var(--on-felt-2); font-size: 14.5px; font-weight: 600; }
-.game-nav button[aria-current='step'] { background: var(--on-felt); color: var(--ink); }
+.game-nav { --pad: 4px; flex: none; display: grid; grid-template-columns: repeat(3, 1fr); padding: var(--pad); margin: 2px 0 6px; border-radius: 999px; }
+.game-nav button { min-height: 36px; border: 0; border-radius: 999px; background: none; color: var(--on-felt-2); font-size: 14.5px; font-weight: 600; transition: color 0.2s; }
+.game-nav button[aria-current='step'] { color: #fff; }
 
 /* ── Buttons, fields ─────────────────────── */
 .btn {
@@ -283,7 +318,7 @@ label.chip:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 5px 10px rgba(0, 0, 0, 0.4); transition: box-shadow 0.12s, transform 0.12s;
 }
 .avatar.sm { width: 36px; height: 36px; font-size: 13px; background: var(--card-inset); box-shadow: inset 0 0 0 1px var(--rule-strong); }
-.who-btn .avatar.sm { background: var(--card); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.who-btn .avatar.sm { width: 34px; height: 34px; background: var(--card); box-shadow: none; }
 .avatar.big { width: 76px; height: 76px; font-size: 26px; z-index: 1; }
 .tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 6px; align-content: start; padding: 10px 0; }
 .body > .tiles.scroll { flex: 1 1 0; }
@@ -471,9 +506,9 @@ button.row:active { background: var(--card-inset); }
 
 /* ── A mouse can hover; a thumb can't ─────── */
 @media (hover: hover) {
-  .icon-btn:hover, .pill-btn:hover, .quick button:not(.on):hover, .chips-row button:hover { background: var(--on-felt-wash); }
-  .tabs button:hover, .game-nav button:hover, .felt-link:hover { color: var(--on-felt); }
-  .game-nav button[aria-current='step']:hover { color: var(--ink); }
+  .quick button:not(.on):hover, .chips-row button:hover { background: var(--on-felt-wash); }
+  .tabs button:hover, .game-nav button:hover, .felt-link:hover { color: #fff; }
+  button.glass:hover { background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1)); }
   .btn:not(.primary):not(:disabled):hover { background: var(--on-felt-wash); }
   .panel .btn:not(.primary):hover, .sheet .btn:not(.primary):hover, button.row:hover, .stepper button:hover, .icon-btn.dark:hover { background: var(--card-inset); }
   .segmented button:not([aria-checked='true']):hover { background: var(--card-inset); }
@@ -502,7 +537,8 @@ button.row:active { background: var(--card-inset); }
   .screen[data-screen='box'] .lede, .screen[data-screen='count'] .lede, .fine { display: none; }
   .form { gap: 8px; }
   .form input { height: 44px; }
-  .game-nav { margin-bottom: 0; }
+  .game-nav { margin-bottom: 2px; }
+  .game-nav button { min-height: 32px; }
 }
 @media (max-width: 359px) {
   .tiles { gap: 12px 2px; }
@@ -521,6 +557,14 @@ button.row:active { background: var(--card-inset); }
   .sheet-wrap { align-items: center; }
   .sheet { border-radius: 22px; max-height: 80%; }
   .toast { top: 28px; }
+}
+
+/* Glass that can't blur what is behind it, or someone who asked for less see-through: go solid. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: #2a5a45; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: #2a5a45; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

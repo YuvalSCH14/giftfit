@@ -321,21 +321,29 @@
   function worthShown() { return prefs.showWorth || prefs.chips.some(function (c) { return c.lock.trim(); }); }
 
   /* ── Screen furniture ────────────────────── */
+  var TABS = ['home', 'friends', 'history'];
+  var GAME_STEPS = ['table', 'count', 'settle'];
+  /* The glass lens under the current item of a bar. It starts where the last screen left it
+   * and slides across, so moving between tabs feels like one piece of glass, not a redraw. */
+  function lens(list) {
+    var at = list.indexOf(ui.screen), from = list.indexOf(ui.from);
+    return '<i class="lens" style="--n:' + list.length + ';--i:' + at + ';--from:' + (from < 0 ? at : from) + '"></i>';
+  }
   function tabbar() {
     var tab = function (id, label, icon, badge) {
       return '<button role="tab" data-act="tab" data-tab="' + id + '" aria-selected="' + (ui.screen === id) + '">' + icon +
         '<span>' + label + '</span>' + (badge ? '<i class="badge">' + badge + '</i>' : '') + '</button>';
     };
-    return '<nav class="tabs" role="tablist" aria-label="Sections">' + tab('home', 'Play', ICON.play) +
+    return '<nav class="tabs glass" role="tablist" aria-label="Sections">' + lens(TABS) + tab('home', 'Play', ICON.play) +
       tab('friends', 'Friends', ICON.friends, data.requests.length) + tab('history', 'History', ICON.history) + '</nav>';
   }
   function accountButton() {
     return prefs.signedIn
-      ? '<button class="who-btn" data-act="go" data-to="account" aria-label="Your account">' + avatar(me().name, 'sm') + '</button>'
-      : '<button class="pill-btn" data-act="go" data-to="account">Sign in</button>';
+      ? '<button class="who-btn glass" data-act="go" data-to="account" aria-label="Your account">' + avatar(me().name, 'sm') + '</button>'
+      : '<button class="pill-btn glass" data-act="go" data-to="account">Sign in</button>';
   }
   function frame(o) {
-    var left = o.back ? '<button class="icon-btn" data-act="back" aria-label="Back">' + ICON.back + '</button>'
+    var left = o.back ? '<button class="icon-btn glass" data-act="back" aria-label="Back">' + ICON.back + '</button>'
       : '<span class="brand">' + ICON.spade + 'Poker Night</span>';
     var mid = o.title != null ? '<div class="bar-title"><b>' + o.title + '</b>' + (o.sub ? '<small>' + o.sub + '</small>' : '') + '</div>'
       : o.dots || '<span class="grow"></span>';
@@ -435,13 +443,13 @@
     var item = function (id, label) {
       return '<button data-act="go" data-to="' + id + '" aria-current="' + (ui.screen === id ? 'step' : 'false') + '">' + label + '</button>';
     };
-    return '<nav class="game-nav" aria-label="Game steps">' + item('table', 'Table') + item('count', 'Count') + item('settle', g && g.status === 'done' ? 'Results' : 'Settle') + '</nav>';
+    return '<nav class="game-nav glass" aria-label="Game steps">' + lens(GAME_STEPS) + item('table', 'Table') + item('count', 'Count') + item('settle', g && g.status === 'done' ? 'Results' : 'Settle') + '</nav>';
   }
   function gameFrame(o) {
     var g = game();
     return frame(Object.assign({
       back: true, title: esc(g.name), sub: isHost(g) ? '' : 'hosted by ' + esc(g.hostName), nav: gameNav(),
-      right: '<button class="icon-btn" data-act="sheet" data-sheet="menu" aria-label="Game menu">' + ICON.more + '</button>',
+      right: '<button class="icon-btn glass" data-act="sheet" data-sheet="menu" aria-label="Game menu">' + ICON.more + '</button>',
     }, o));
   }
   function goneFrame() {
@@ -893,6 +901,7 @@
       else ui.sheet = null;
     }
     $('#app').innerHTML = html;
+    ui.from = null;
     ui.anim = '';
     ui.sheetIn = false;
     ui.stale = false;
@@ -907,6 +916,7 @@
     render();
   }
   function go(screen, dir) {
+    ui.from = ui.screen;
     ui.screen = screen;
     ui.anim = dir || 'fwd';
     ui.sheet = null;
