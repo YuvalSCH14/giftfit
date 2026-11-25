@@ -353,6 +353,7 @@ label.chip:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
 .chip-rows { display: grid; gap: 8px; }
 .chip-row .x-btn { width: 100%; }
 .row-actions { display: flex; align-items: center; justify-content: space-between; gap: 4px 12px; margin: 6px 0 -8px; flex-wrap: wrap; }
+.box .hint { margin: 10px 0 2px; font-size: 14px; color: var(--ink-2); }
 
 /* ── The split ───────────────────────────── */
 .fit { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: var(--on-felt); }

@@ -288,10 +288,16 @@
   function nameOf(g, p) { return isMine(g, p) && me().username ? 'You' : p.name || 'Player'; }
   function ratio(values) { return Solver.pointsRatio(values); }
   /* Chip values as cash, or as points at a round rate when that reads better. */
-  function chipText(value, values, cur) {
+  function fmtPoints(n) { return fmtNumber(n, n % 1 ? 2 : 0); }
+  /* What a chip is worth, as people at this table say it. With numbers printed on the chips
+   * (rate = points per unit of money) that is the number itself; otherwise cash, or points at a
+   * round rate when someone prefers that. */
+  function chipText(value, values, cur, rate) {
+    if (rate > 1) return fmtPoints((value * rate) / 100);
     var r = ratio(values);
     return prefs.display === 'points' && r > 1 ? fmtNumber((value * r) / 100, 0) : money(value, cur);
   }
+  function chipLabel(value, values, cur, rate) { return chipText(value, values, cur, rate) + (rate > 1 ? ' pts' : ''); }
   function gameValues(g) { return g.lines.map(function (l) { return l.value; }); }
 
   /* ── Setting up a new game ───────────────── */
@@ -309,11 +315,17 @@
   function chipById(id) { return prefs.chips.filter(function (c) { return c.id === id; })[0]; }
   function chipName(id) { var c = chipById(id); return (c && c.name.trim()) || 'Chip'; }
   function chipCount(c) { return c && /^\d+$/.test(c.count.trim()) ? parseInt(c.count, 10) : 0; }
+  /* Two kinds of chip set. Plain chips: the app decides what each colour is worth. Chips with
+   * numbers printed on them: the numbers stay, and the app decides how many points a buy-in gets. */
   function compute() {
-    solved = Solver.solve({
-      chips: prefs.chips.map(function (c) { return { id: c.id, count: chipCount(c), lock: parseMoney(c.lock) || 0 }; }),
-      players: playerCount(), buyIn: parseMoney(prefs.buyIn), reserve: prefs.reserve, style: prefs.style,
-    });
+    var ask = { players: playerCount(), buyIn: parseMoney(prefs.buyIn), reserve: prefs.reserve, style: prefs.style };
+    if (numbersOn()) {
+      ask.chips = prefs.chips.map(function (c) { return { id: c.id, count: chipCount(c), face: parseMoney(c.lock) || 0 }; });
+      solved = Solver.solveNumbers(ask);
+    } else {
+      ask.chips = prefs.chips.map(function (c) { return { id: c.id, count: chipCount(c) }; });
+      solved = Solver.solve(ask);
+    }
     if (prefs.pick >= solved.options.length) prefs.pick = 0;
   }
   function option() { return solved.options[prefs.pick] || solved.options[0] || null; }
@@ -324,7 +336,8 @@
     return '<div class="dots" role="img" aria-label="Step ' + (at + 1) + ' of ' + list.length + '">' +
       list.map(function (s, i) { return '<i class="' + (i === at ? 'on' : i < at ? 'done' : '') + '"></i>'; }).join('') + '</div>';
   }
-  function worthShown() { return prefs.showWorth || prefs.chips.some(function (c) { return c.lock.trim(); }); }
+  /* c.lock holds the number printed on that colour, as typed. */
+  function numbersOn() { return prefs.showWorth || prefs.chips.some(function (c) { return c.lock.trim(); }); }
 
   /* ── Screen furniture ────────────────────── */
   var TABS = ['home', 'friends', 'history'];
@@ -374,12 +387,12 @@
     return out;
   }
   /* The stacks to hand out, standing on the felt. lines: [{name, color, value, perPlayer}] */
-  function pilesHtml(lines, cur) {
+  function pilesHtml(lines, cur, rate) {
     var values = lines.map(function (l) { return l.value; });
     var index = 0;
     return '<div class="felt-strip' + (lines.length > 4 ? ' tight' : '') + '">' + lines.map(function (l) {
       var pile = '<div class="pile"><div class="stacks">' + stacksHtml(l.color, l.perPlayer, index) + '</div>' +
-        '<div class="pile-label"><b><span>&times;</span>' + l.perPlayer + '</b><small>' + esc(l.name) + '</small><span class="worth">' + esc(chipText(l.value, values, cur)) + '</span></div></div>';
+        '<div class="pile-label"><b><span>&times;</span>' + l.perPlayer + '</b><small>' + esc(l.name) + '</small><span class="worth">' + esc(chipLabel(l.value, values, cur, rate)) + '</span></div></div>';
       index += l.perPlayer;
       return pile;
     }).join('') + '</div>';
@@ -407,15 +420,19 @@
         title = 'What’s the buy-in?';
         body = 'Go back and type an amount above zero.';
         break;
-      case 'duplicate-lock':
-        title = 'Two colours, one value';
-        body = 'Two chip colours are set to the same worth.';
-        action = '<button class="btn primary" data-act="clear-locks">Let the app pick the values</button>';
+      case 'missing-number':
+        title = 'A colour has no number';
+        body = 'Type the number printed on every colour, or remove the colours you won’t use.';
+        action = '<button class="btn primary" data-act="edit-box" data-custom="1">Fix the chip set</button>';
         break;
-      case 'lock':
-        title = 'Those values don’t fit';
-        body = 'With the values you typed in, no stack adds up to the buy-in.';
-        action = '<button class="btn primary" data-act="clear-locks">Let the app pick the values</button>';
+      case 'duplicate-number':
+        title = 'Two colours, one number';
+        body = 'Two colours have the same number on them. Each colour needs its own.';
+        action = '<button class="btn primary" data-act="edit-box" data-custom="1">Fix the chip set</button>';
+        break;
+      case 'numbers-no-fit':
+        title = 'Those chips can’t make this buy-in';
+        body = 'With these numbers there’s no equal stack for ' + playerCount() + ' players that comes to a round rate. Try fewer players or a different buy-in.';
         break;
       case 'reserve':
         title = 'Not enough chips to keep that many aside';
@@ -540,24 +557,25 @@
             '</div><div class="grow two"></div>',
         });
       }
-      var worth = worthShown(), only = prefs.chips.length <= 1;
+      var worth = numbersOn(), only = prefs.chips.length <= 1;
       var rows = prefs.chips.map(function (c) {
         var n = esc(c.name || 'chip');
         return '<div class="chip-row" data-id="' + esc(c.id) + '">' +
           '<label class="chip" style="' + chipStyle(c.color) + '" title="Change colour"><input type="color" data-field="chip-color" value="' + validHex(c.color) + '" aria-label="Colour of ' + n + ' chips"></label>' +
           '<input type="text" data-field="chip-name" value="' + esc(c.name) + '" maxlength="18" autocomplete="off" autocapitalize="words" enterkeyhint="done" aria-label="Chip name">' +
           '<input type="text" class="num" inputmode="numeric" data-field="chip-count" value="' + esc(c.count) + '" maxlength="5" autocomplete="off" aria-label="How many ' + n + ' chips">' +
-          (worth ? '<input type="text" class="num" inputmode="decimal" data-field="chip-lock" value="' + esc(c.lock) + '" placeholder="auto" maxlength="8" autocomplete="off" aria-label="Fixed value for ' + n + ' chips, optional">' : '') +
+          (worth ? '<input type="text" class="num" inputmode="decimal" data-field="chip-lock" value="' + esc(c.lock) + '" placeholder="?" maxlength="8" autocomplete="off" aria-label="The number printed on ' + n + ' chips">' : '') +
           '<button class="x-btn" data-act="remove-chip" aria-label="Remove ' + n + ' chips"' + (only ? ' disabled' : '') + '>&times;</button></div>';
       }).join('');
       return frame({
         back: true, dots: dots(),
         body: '<h1>What’s in your set?</h1><p class="lede"><b id="chipTotal"></b> · one row per colour.</p>' +
           '<div class="panel box scroll' + (worth ? ' with-worth' : '') + '">' +
-          '<div class="chip-rows-head" aria-hidden="true"><span></span><span>Colour</span><span>How many</span>' + (worth ? '<span>Worth</span>' : '') + '<span></span></div>' +
+          '<div class="chip-rows-head" aria-hidden="true"><span></span><span>Colour</span><span>Count</span>' + (worth ? '<span>Number</span>' : '') + '<span></span></div>' +
           '<div class="chip-rows">' + rows + '</div>' +
           '<div class="row-actions"><button class="link" data-act="add-chip">+ Add a colour</button>' +
-          '<button class="link quiet" data-act="toggle-worth">' + (worth ? 'Let the app pick values' : 'Set values myself') + '</button></div></div>',
+          '<button class="link quiet" data-act="toggle-worth">' + (worth ? 'My chips have no numbers' : 'My chips have numbers on them') + '</button></div>' +
+          (worth ? '<p class="hint">Type the number printed on each chip. The app works out what a buy-in gets.</p>' : '') + '</div>',
         dock: '<button class="btn primary big" data-act="next">Done</button>',
       });
     },
@@ -565,13 +583,16 @@
     split: function () {
       compute();
       if (solved.problem) return frame({ back: true, dots: dots(), body: '<div class="center">' + problemView(solved.problem) + '</div>' });
-      var opt = option(), cur = prefs.currency;
+      var opt = option(), cur = prefs.currency, rate = opt.rate;
       var values = opt.lines.map(function (l) { return l.value; });
+      var lede = rate > 1
+        ? '<b>' + opt.chipsPerPlayer + ' chips</b> = <b>' + fmtPoints(opt.points) + ' points</b> for ' + esc(money(parseMoney(prefs.buyIn), cur)) + '. So ' + esc(cur) + '1 is ' + fmtPoints(rate) + ' points.'
+        : '<b>' + opt.chipsPerPlayer + ' chips</b>, worth ' + esc(money(parseMoney(prefs.buyIn), cur)) + '.';
       return frame({
         back: true, dots: dots(),
-        body: '<h1>Give each player</h1><p class="lede"><b>' + opt.chipsPerPlayer + ' chips</b>, worth ' + esc(money(parseMoney(prefs.buyIn), cur)) + '.</p>' +
-          '<div class="grow center">' + pilesHtml(optionLines(opt), cur) + '</div>' +
-          '<div class="facts"><span>Blinds start at <b>' + esc(chipText(opt.smallBlind, values, cur)) + '</b> and <b>' + esc(chipText(opt.bigBlind, values, cur)) + '</b></span></div>',
+        body: '<h1>Give each player</h1><p class="lede">' + lede + '</p>' +
+          '<div class="grow center">' + pilesHtml(optionLines(opt), cur, rate) + '</div>' +
+          '<div class="facts"><span>Blinds start at <b>' + esc(chipText(opt.smallBlind, values, cur, rate)) + '</b> and <b>' + esc(chipText(opt.bigBlind, values, cur, rate)) + '</b></span></div>',
         dock: '<div class="dock-row"><button class="btn" data-act="sheet" data-sheet="options">Options</button>' +
           '<button class="btn primary big" data-act="start-game"' + (ui.busy ? ' disabled' : '') + '>Start the game</button></div>',
       });
@@ -628,7 +649,7 @@
       if (c.mode === 'chips') {
         entry = '<div class="panel count-rows scroll">' + g.lines.map(function (l) {
           return '<div class="count-row"><span class="chip" style="' + chipStyle(l.color) + '"></span>' +
-            '<div class="count-name"><b>' + esc(l.name) + '</b><small>' + esc(chipText(l.value, values, cur)) + ' each</small></div>' +
+            '<div class="count-name"><b>' + esc(l.name) + '</b><small>' + esc(chipLabel(l.value, values, cur, g.rate)) + ' each</small></div>' +
             '<div class="stepper"><button data-act="count-step" data-cid="' + l.id + '" data-by="-1" aria-label="One ' + esc(l.name) + ' chip fewer"' + off + '>&minus;</button>' +
             '<input type="text" inputmode="numeric" maxlength="4" autocomplete="off" data-field="count-chip" data-cid="' + l.id + '" value="' + esc(c.counts[l.id]) + '" placeholder="0" aria-label="' + esc(l.name) + ' chips"' + off + '>' +
             '<button data-act="count-step" data-cid="' + l.id + '" data-by="1" aria-label="One ' + esc(l.name) + ' chip more"' + off + '>+</button></div></div>';
@@ -823,15 +844,16 @@
       }).join('');
       var html = '<h2>Options</h2><div class="sheet-line"><span>Game length</span><div class="segmented small" role="radiogroup">' + pace + '</div></div>' +
         '<div class="sheet-line"><span>Stacks kept aside for rebuys</span><div class="stepper"><button data-act="reserve" data-by="-1" aria-label="Keep one fewer aside">&minus;</button><output>' + prefs.reserve + '</output><button data-act="reserve" data-by="1" aria-label="Keep one more aside">+</button></div></div>';
-      if (ratio(opt.lines.map(function (l) { return l.value; })) > 1) {
+      if (!opt.rate && ratio(opt.lines.map(function (l) { return l.value; })) > 1) {
         html += '<div class="sheet-line"><span>Show chip values as</span><div class="segmented small" role="radiogroup"><button role="radio" data-act="display" data-display="cash" aria-checked="' + (prefs.display !== 'points') + '">Cash</button>' +
           '<button role="radio" data-act="display" data-display="points" aria-checked="' + (prefs.display === 'points') + '">Points</button></div></div>';
       }
       if (solved.options.length > 1) {
-        html += '<p class="sheet-label">Other ways to split the chips</p><div class="options">' + solved.options.map(function (o, i) {
+        html += '<p class="sheet-label">' + (opt.rate ? 'How many points a buy-in gets' : 'Other ways to split the chips') + '</p><div class="options">' + solved.options.map(function (o, i) {
           var v = o.lines.map(function (l) { return l.value; });
-          return '<button class="option" data-act="pick" data-pick="' + i + '" aria-pressed="' + (o === opt) + '"><b>' + TAGS[o.tag] + '</b><small>' +
-            o.chipsPerPlayer + ' chips · blinds ' + esc(chipText(o.smallBlind, v, cur) + ' / ' + chipText(o.bigBlind, v, cur)) + '</small></button>';
+          var title = o.rate ? fmtPoints(o.points) + (o.rate > 1 ? ' points' : ' ' + esc(cur)) : TAGS[o.tag];
+          return '<button class="option" data-act="pick" data-pick="' + i + '" aria-pressed="' + (o === opt) + '"><b>' + title + '</b><small>' +
+            o.chipsPerPlayer + ' chips · blinds ' + esc(chipText(o.smallBlind, v, cur, o.rate) + ' / ' + chipText(o.bigBlind, v, cur, o.rate)) + '</small></button>';
         }).join('') + '</div>';
       }
       return html + '<div class="sheet-actions"><button class="btn" data-act="edit-box">Change chip set</button><button class="btn primary" data-act="close-sheet">Done</button></div>';
@@ -841,9 +863,10 @@
       if (!g) return '';
       var cur = g.currency, values = gameValues(g);
       var total = g.lines.reduce(function (a, l) { return a + l.perPlayer; }, 0);
-      return '<h2>Each player gets ' + total + ' chips</h2><p class="sheet-note">' + esc(money(g.buyIn, cur)) + ' buy-in · blinds start at ' + esc(chipText(g.smallBlind, values, cur)) + ' and ' + esc(chipText(g.bigBlind, values, cur)) + '</p>' +
+      return '<h2>Each player gets ' + total + ' chips</h2><p class="sheet-note">' + esc(money(g.buyIn, cur)) + ' buy-in' + (g.rate ? ' = ' + fmtPoints((g.buyIn * g.rate) / 100) + ' points' : '') +
+        ' · blinds start at ' + esc(chipText(g.smallBlind, values, cur, g.rate)) + ' and ' + esc(chipText(g.bigBlind, values, cur, g.rate)) + '</p>' +
         '<div class="list">' + g.lines.map(function (l) {
-          return '<div class="row"><span class="chip sm" style="' + chipStyle(l.color) + '"></span><span class="row-name"><b>' + l.perPlayer + ' × ' + esc(l.name) + '</b></span><span class="amt">' + esc(chipText(l.value, values, cur)) + '</span></div>';
+          return '<div class="row"><span class="chip sm" style="' + chipStyle(l.color) + '"></span><span class="row-name"><b>' + l.perPlayer + ' × ' + esc(l.name) + '</b></span><span class="amt">' + esc(chipLabel(l.value, values, cur, g.rate)) + '</span></div>';
         }).join('') + '</div><div class="sheet-actions"><button class="btn" data-act="share-setup">Share</button><button class="btn primary" data-act="close-sheet">Done</button></div>';
     },
     /* The host says who bought back in. */
@@ -1053,8 +1076,9 @@
   function setupText(g) {
     var cur = g.currency, values = gameValues(g);
     var total = g.lines.reduce(function (a, l) { return a + l.perPlayer; }, 0);
-    var lines = ['♠ ' + g.name, g.players.length + ' players · ' + money(g.buyIn, cur) + ' buy-in · blinds ' + chipText(g.smallBlind, values, cur) + '/' + chipText(g.bigBlind, values, cur), '', 'Each player gets ' + total + ' chips:'];
-    g.lines.forEach(function (l) { lines.push('  ' + l.perPlayer + ' × ' + l.name + ' (' + chipText(l.value, values, cur) + ')'); });
+    var lines = ['♠ ' + g.name, g.players.length + ' players · ' + money(g.buyIn, cur) + ' buy-in · blinds ' + chipText(g.smallBlind, values, cur, g.rate) + '/' + chipText(g.bigBlind, values, cur, g.rate), '',
+      'Each player gets ' + total + ' chips' + (g.rate ? ' (' + fmtPoints((g.buyIn * g.rate) / 100) + ' points, ' + cur + '1 = ' + fmtPoints(g.rate) + ')' : '') + ':'];
+    g.lines.forEach(function (l) { lines.push('  ' + l.perPlayer + ' × ' + l.name + ' (' + chipLabel(l.value, values, cur, g.rate) + ')'); });
     return lines.join('\n');
   }
   function resultsText(g) {
@@ -1122,7 +1146,7 @@
     var invited = selFriends().length;
     call('POST', 'games', {
       name: prefs.name, currency: prefs.currency, buyIn: buyIn,
-      lines: optionLines(opt), friendIds: selFriends().map(function (f) { return f.id; }), guests: guestNames(),
+      lines: optionLines(opt), rate: opt.rate || null, friendIds: selFriends().map(function (f) { return f.id; }), guests: guestNames(),
     }).then(function (g) {
       ui.busy = false;
       putGame(g);
@@ -1233,6 +1257,11 @@
     },
     next: function () {
       if (ui.screen === 'box') { // the editor's Done
+        if (numbersOn() && prefs.chips.some(function (c) { return chipCount(c) > 0 && !(parseMoney(c.lock) > 0); })) {
+          var blank = $$('[data-field="chip-lock"]').filter(function (el) { return !(parseMoney(el.value) > 0); })[0];
+          if (blank) blank.focus();
+          return toast('Type the number on every colour');
+        }
         prefs.boxOk = true;
         ui.boxEdit = false;
         ui.boxCustom = false;
@@ -1273,7 +1302,7 @@
     'quick-buy': function (el) { prefs.buyIn = el.dataset.buy; changed(); },
     pace: function (el) { prefs.style = el.dataset.style; changed(); },
     'pick-set': function (el) {
-      prefs.chips = presetChips(el.dataset.set);
+      prefs.chips = presetChips(el.dataset.set); // plain chips, no numbers
       prefs.showWorth = false;
       prefs.boxOk = true;
       prefs.pick = 0;
@@ -1298,7 +1327,7 @@
       changed();
     },
     'toggle-worth': function () {
-      var on = worthShown();
+      var on = numbersOn();
       if (on) prefs.chips.forEach(function (c) { c.lock = ''; });
       prefs.showWorth = !on;
       changed();
@@ -1308,7 +1337,7 @@
     reserve: function (el) { prefs.reserve = Math.max(0, Math.min(20, prefs.reserve + Number(el.dataset.by))); changed(); },
     pick: function (el) { prefs.pick = parseInt(el.dataset.pick, 10) || 0; savePrefs(); render(); },
     display: function (el) { prefs.display = el.dataset.display; savePrefs(); render(); },
-    'edit-box': function () { ui.boxEdit = true; ui.boxCustom = false; go('box', 'fwd'); },
+    'edit-box': function (el) { ui.boxEdit = true; ui.boxCustom = !!(el && el.dataset.custom) || numbersOn(); go('box', 'fwd'); },
     'start-game': startGame,
 
     'open-game': function (el) { openGame(el.dataset.id); },

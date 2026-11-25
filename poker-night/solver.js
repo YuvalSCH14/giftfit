@@ -376,7 +376,95 @@
     return 100;
   }
 
-  var api = { solve: solve, settle: settle, pointsRatio: pointsRatio };
+  /* ── Chips with numbers printed on them ──────
+   * The numbers are points, and they are what they are. What's open is the rate: how many points a
+   * unit of money buys. Try every round rate at which each chip comes to a whole number of cents,
+   * work out the best stack at that rate, and offer the rates that play best.
+   */
+  var RATES = [1, 2, 4, 5, 10, 20, 25, 40, 50, 100, 200, 250, 400, 500, 1000, 2000, 2500, 4000, 5000, 10000];
+
+  /* chips: [{id, count, face}] where face is the printed number times 100. Best stack at one rate, or null. */
+  function numberedAt(chips, rate, players, buyIn, reserve, style) {
+    var stacks = players + reserve;
+    var wantDepth = TARGET_DEPTH[style] || TARGET_DEPTH.classic;
+    var items = [], most = 0, i, j;
+    for (i = 0; i < chips.length; i++) {
+      if (chips[i].face % rate !== 0) return null; // this chip would be a fraction of a cent
+      var value = chips[i].face / rate;
+      var cap = Math.floor(chips[i].count / stacks);
+      if (cap < 1 || value > buyIn) continue; // too few to go round, or one chip is worth more than a whole stack
+      items.push({ id: chips[i].id, count: chips[i].count, cap: cap, value: value });
+      most += value * Math.min(cap, MAX_PER_COLOUR);
+    }
+    if (!items.length || most < buyIn) return null; // every chip on the table still isn't a buy-in
+    items.sort(function (a, b) { return a.value - b.value; });
+    var awkward = /^4/.test(String(rate)) ? 3 : 0; // 4 points to the unit is harder to do in your head than 5
+    var best = null;
+    for (var mask = 1; mask < (1 << items.length); mask++) {
+      var picked = [];
+      for (j = 0; j < items.length; j++) if (mask & (1 << j)) picked.push(items[j]);
+      if (picked.length > MAX_COLOURS) continue;
+      var values = picked.map(function (x) { return x.value; });
+      var fit = bestCounts(values, picked.map(function (x) { return x.cap; }), buyIn);
+      if (!fit) continue;
+      var n = fit.counts.reduce(function (a, b) { return a + b; }, 0);
+      var countPen = n < 25 ? (25 - n) * 0.8 : n > 60 ? (n - 60) * 0.4 : 0;
+      var score = 100 - levelPenalty(values, buyIn, wantDepth) - countPen + fit.shape - 0.25 * Math.min(n, 30) - awkward;
+      if (!best || score > best.score) best = { values: values, owners: picked, counts: fit.counts, chips: n, score: score, rate: rate };
+    }
+    return best;
+  }
+
+  function solveNumbers(input) {
+    input = input || {};
+    var all = (Array.isArray(input.chips) ? input.chips : []).map(function (c) {
+      return { id: c.id, count: Math.floor(Number(c.count)) || 0, face: Math.round(Number(c.face)) || 0 };
+    }).filter(function (c) { return c.count > 0; });
+    var players = Math.floor(Number(input.players));
+    var buyIn = Math.round(Number(input.buyIn));
+    var reserve = Math.max(0, Math.floor(Number(input.reserve)) || 0);
+    var style = TARGET_DEPTH[input.style] ? input.style : 'classic';
+    var fail = function (code, extra) { return { options: [], problem: Object.assign({ code: code }, extra || {}) }; };
+    if (!all.length) return fail('no-chips');
+    if (!(players >= 2)) return fail('few-players');
+    if (!(buyIn > 0)) return fail('buy-in');
+    var seen = {};
+    for (var i = 0; i < all.length; i++) {
+      if (!(all[i].face > 0)) return fail('missing-number');
+      if (seen[all[i].face]) return fail('duplicate-number');
+      seen[all[i].face] = true;
+    }
+    var run = function (n, held) {
+      var found = [];
+      RATES.forEach(function (rate) {
+        var r = numberedAt(all, rate, n, buyIn, held, style);
+        if (r) found.push(r);
+      });
+      return found.sort(function (a, b) { return b.score - a.score; });
+    };
+    var results = run(players, reserve);
+    if (results.length) {
+      return {
+        problem: null,
+        options: results.slice(0, 3).map(function (r, k) {
+          var o = toOption(r, all, players, buyIn);
+          o.rate = r.rate; // points per unit of money
+          o.points = (buyIn * r.rate) / 100; // points in one stack
+          o.tag = k ? 'rate' : 'best';
+          return o;
+        }),
+      };
+    }
+    if (reserve > 0 && run(players, 0).length) {
+      var fits = 0;
+      for (var held = reserve - 1; held >= 1; held--) if (run(players, held).length) { fits = held; break; }
+      return fail('reserve', { maxReserve: fits });
+    }
+    for (var n = Math.min(players - 1, 60); n >= 2; n--) if (run(n, 0).length) return fail('players', { maxPlayers: n });
+    return fail('numbers-no-fit');
+  }
+
+  var api = { solve: solve, solveNumbers: solveNumbers, settle: settle, pointsRatio: pointsRatio };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.PokerSolver = api;
 })(typeof window !== 'undefined' ? window : globalThis);

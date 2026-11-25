@@ -326,6 +326,7 @@
       var buyIn = int(body.buyIn);
       if (!(buyIn > 0 && buyIn <= 1e7)) fail(400, 'bad_buyin', 'Set a buy-in above zero.');
       var lines = cleanLines(body.lines, buyIn);
+      var rate = int(body.rate);
       var mine = me.username ? await store.cmd('SMEMBERS', K.friends(me.id)) : [];
       var friendIds = unique((Array.isArray(body.friendIds) ? body.friendIds : []).filter(function (id) {
         return typeof id === 'string' && mine.indexOf(id) >= 0;
@@ -343,6 +344,9 @@
         id: rid(14), hostId: me.id, hostName: me.name, name: str(body.name, 40) || 'Poker Night',
         currency: CURRENCIES.indexOf(body.currency) >= 0 ? body.currency : '$', buyIn: buyIn, lines: lines,
         smallBlind: lines[0].value, bigBlind: lines[0].value * 2,
+        // Chips with numbers on them: how many points one unit of money buys, so every phone can
+        // show a chip as its printed number. Kept only if each chip really is a whole number.
+        rate: rate > 1 && rate <= 1e6 && lines.every(function (l) { return (l.value * rate) % 100 === 0; }) ? rate : null,
         status: 'play', dealer: null, order: players.map(function (p) { return p.pid; }),
         code: rid(10), createdAt: now(), closedAt: null,
       };
