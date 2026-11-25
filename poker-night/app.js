@@ -210,7 +210,7 @@
   var solved = { options: [], problem: null };
   var ui = {
     screen: 'home', from: null, anim: '', gameId: null, sheet: null, sheetIn: false, count: null, cameFrom: '', boxEdit: false, boxCustom: false,
-    dealing: false, dragging: false, stale: false, pop: false,
+    boxCheck: false, dealing: false, dragging: false, stale: false, pop: false,
     seg: { history: 'board', account: 'signup' }, error: '', busy: false,
   };
 
@@ -293,6 +293,7 @@
     }
     boxBefore = null;
     ui.boxCustom = false;
+    ui.boxCheck = false;
   }
   function pushBox() {
     if (!prefs.signedIn || !prefs.mine) return;
@@ -409,8 +410,17 @@
     if (prefs.pick >= solved.options.length) prefs.pick = 0;
   }
   function option() { return solved.options[prefs.pick] || solved.options[0] || null; }
-  /* Every new game starts by picking the chips on the table tonight. */
-  function steps() { return ['box', 'players', 'buyin', 'split']; }
+  /* The chip set is asked for once. After that a new game is players, buy-in, split, and the
+   * chips are one tap away from the split's Options. */
+  function steps() { return prefs.set && !ui.boxEdit ? ['players', 'buyin', 'split'] : ['players', 'buyin', 'box', 'split']; }
+  /* Colours in play that still need the number printed on them. */
+  function needNumber(chips, numbers) {
+    return numbers ? chips.filter(function (c) { return /^\d+$/.test(String(c.count).trim()) && parseInt(c.count, 10) > 0 && !(parseMoney(c.lock) > 0); }) : [];
+  }
+  function namesOf(chips) {
+    var names = chips.map(function (c) { return String(c.name).trim() || 'A colour'; });
+    return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  }
   function dots() {
     var list = steps(), at = list.indexOf(ui.screen);
     return '<div class="dots" role="img" aria-label="Step ' + (at + 1) + ' of ' + list.length + '">' +
@@ -503,13 +513,13 @@
         break;
       case 'missing-number':
         title = 'A colour has no number';
-        body = 'Type the number printed on every colour, or remove the colours you won’t use.';
-        action = '<button class="btn primary" data-act="edit-box" data-custom="1">Fix the chip set</button>';
+        body = namesOf(needNumber(prefs.chips, true)) + (needNumber(prefs.chips, true).length === 1 ? ' still needs' : ' still need') + ' the number printed on the chip.';
+        action = '<button class="btn primary" data-act="edit-box">Choose the chips</button>';
         break;
       case 'duplicate-number':
         title = 'Two colours, one number';
         body = 'Two colours have the same number on them. Each colour needs its own.';
-        action = '<button class="btn primary" data-act="edit-box" data-custom="1">Fix the chip set</button>';
+        action = '<button class="btn primary" data-act="edit-box">Choose the chips</button>';
         break;
       case 'numbers-no-fit':
         title = 'Those chips can’t make this buy-in';
@@ -634,12 +644,15 @@
         var mine = '';
         if (prefs.mine) {
           var total = prefs.mine.chips.reduce(function (a, c) { return a + (/^\d+$/.test(String(c.count).trim()) ? parseInt(c.count, 10) : 0); }, 0);
-          mine = '<button class="choice' + (prefs.set === 'mine' ? ' current' : '') + '" data-act="use-saved"><span class="choice-text"><b>Your chip set</b><small>' + fmtNumber(total, 0) + ' chips' + (prefs.mine.numbers ? ' · with numbers' : '') + last('mine') + '</small></span>' +
+          var gaps = needNumber(prefs.mine.chips, prefs.mine.numbers);
+          mine = '<button class="choice' + (prefs.set === 'mine' ? ' current' : '') + '" data-act="use-saved"><span class="choice-text"><b>Your chip set</b><small>' +
+            (gaps.length ? '<span class="warn">' + esc(namesOf(gaps)) + (gaps.length === 1 ? ' needs its number' : ' need their numbers') + '</span>'
+              : fmtNumber(total, 0) + ' chips' + (prefs.mine.numbers ? ' · with numbers' : '') + last('mine')) + '</small></span>' +
             '<span class="choice-chips">' + prefs.mine.chips.slice(0, 6).map(function (c) { return '<span class="chip sm" style="' + chipStyle(c.color) + '"></span>'; }).join('') + '</span></button>';
         }
         return frame({
           back: true, dots: dots(),
-          body: '<h1>Which chips tonight?</h1><p class="lede">Tap the set you’re playing with.</p><div class="grow"></div><div class="choices">' + mine +
+          body: '<h1>Which chip set do you have?</h1><p class="lede">' + (prefs.set ? 'Tap the set you’re playing with.' : 'You only pick this once.') + '</p><div class="grow"></div><div class="choices">' + mine +
             set('300', '300 chips', 'The usual case') + set('500', '500 chips', 'The big case') +
             '<button class="choice quiet" data-act="custom-set"><span class="choice-text"><b>' + (mine ? 'Change your set' : 'Something else') + '</b><small>' + (mine ? 'Colours, counts or numbers' : 'Tell the app what’s in it') + '</small></span><span class="choice-go">' + ICON.back + '</span></button>' +
             '</div><div class="grow two"></div>',
@@ -663,7 +676,8 @@
           '<div class="chip-rows">' + rows + '</div>' +
           '<div class="row-actions"><button class="link" data-act="add-chip">+ Add a colour</button>' +
           '<button class="link quiet" data-act="toggle-worth">' + (worth ? 'My chips have no numbers' : 'My chips have numbers on them') + '</button></div>' +
-          (worth ? '<p class="hint">Type the number printed on each chip. The app works out what a buy-in gets.</p>' : '') + '</div>',
+          (worth ? '<p class="hint">Type the number printed on each chip. The app works out what a buy-in gets.</p>' : '') +
+          '<p class="need-msg" id="needMsg" role="alert"></p></div>',
         dock: '<div class="dock-row"><button class="btn" data-act="reset-box">Reset</button><button class="btn primary big" data-act="next">Save</button></div>',
       });
     },
@@ -1075,7 +1089,7 @@
     ui.sheetIn = false;
     ui.stale = false;
     ui.pop = false;
-    if (ui.screen === 'box') updateChipTotal();
+    if (ui.screen === 'box') { updateChipTotal(); showMissing(); }
     if (ui.screen === 'count') updateCountTotal();
     if (ui.screen === 'table') afterTable();
     if (ui.screen === 'settle' && entering) {
@@ -1129,6 +1143,18 @@
     openSheet({ type: 'confirm', title: title, detail: detail, yes: yes, plain: !!plain });
   }
 
+  /* Marks the colours that still need a number, and names them. Only once someone has tried to
+   * save or came here to fix it: nobody wants to be told off while they are still typing. */
+  function showMissing() {
+    var msg = $('#needMsg');
+    if (!msg) return;
+    var gaps = ui.boxCheck ? needNumber(prefs.chips, numbersOn()) : [];
+    $$('.chip-row').forEach(function (row) {
+      var input = $('[data-field="chip-lock"]', row);
+      if (input) input.classList.toggle('need', gaps.indexOf(chipById(row.dataset.id)) >= 0);
+    });
+    msg.textContent = gaps.length ? namesOf(gaps) + (gaps.length === 1 ? ' has' : ' have') + ' no number yet.' : '';
+  }
   function updateChipTotal() {
     var total = prefs.chips.reduce(function (a, c) { return a + chipCount(c); }, 0);
     var el = $('#chipTotal');
@@ -1185,11 +1211,11 @@
 
   /* ── Things people can do ────────────────── */
   function changed() { prefs.pick = 0; savePrefs(); render(); }
-  /* With the chips chosen: on to the players, or back to the split if that is where they came from. */
+  /* With the chips chosen, the split is next, whether this is the first game or a change of set. */
   function afterBox() {
-    var back = ui.boxEdit;
     ui.boxEdit = false;
-    go(back ? 'split' : 'players', back ? 'back' : 'fwd');
+    ui.boxCheck = false;
+    go('split');
   }
   /* Back at the table with no sheet in the way, for the things that happen on the felt. */
   function showTable() {
@@ -1351,10 +1377,12 @@
     },
     next: function () {
       if (ui.screen === 'box') { // the editor's Done
-        if (numbersOn() && prefs.chips.some(function (c) { return chipCount(c) > 0 && !(parseMoney(c.lock) > 0); })) {
-          var blank = $$('[data-field="chip-lock"]').filter(function (el) { return !(parseMoney(el.value) > 0); })[0];
+        if (needNumber(prefs.chips, numbersOn()).length) { // say which, on the chip itself
+          ui.boxCheck = true;
+          showMissing();
+          var blank = $('.chip-row .need');
           if (blank) blank.focus();
-          return toast('Type the number on every colour');
+          return;
         }
         leaveEditor(true);
         saveBox();
@@ -1388,7 +1416,7 @@
     },
     'login-instead': function () { ui.seg.account = 'login'; go('account'); },
 
-    'new-game': function () { ui.boxEdit = false; leaveEditor(false); go('box'); },
+    'new-game': function () { ui.boxEdit = false; leaveEditor(false); go('players'); },
     'players-step': function (el) {
       var least = Math.max(2, 1 + selFriends().length);
       prefs.count = Math.max(least, Math.min(MAX_PLAYERS, playerCount() + Number(el.dataset.by)));
@@ -1414,7 +1442,17 @@
       savePrefs();
       afterBox();
     },
-    'use-saved': function () { useMine(); savePrefs(); afterBox(); },
+    'use-saved': function () {
+      if (needNumber(prefs.mine.chips, prefs.mine.numbers).length) { // not usable yet: open it on what is missing
+        openEditor();
+        ui.boxCheck = true;
+        ui.anim = 'fwd';
+        return render();
+      }
+      useMine();
+      savePrefs();
+      afterBox();
+    },
     /* Start the editor again from a clean, plain set. Nothing saved changes until Save is pressed. */
     'reset-box': function () {
       ask('Start this chip set again?', 'Colours, counts and numbers go back to a plain 300-chip set. Your saved set only changes when you tap Save.', 'Reset', function () {
@@ -1427,7 +1465,7 @@
         toast('Back to a plain set');
       });
     },
-    'custom-set': function () { openEditor(); ui.anim = 'fwd'; render(); },
+    'custom-set': function () { openEditor(); ui.boxCheck = !!prefs.mine && needNumber(prefs.mine.chips, prefs.mine.numbers).length > 0; ui.anim = 'fwd'; render(); },
     'add-chip': function () {
       var used = prefs.chips.map(function (c) { return c.color.toLowerCase(); });
       var next = PALETTE.filter(function (p) { return used.indexOf(p[1]) < 0; })[0] || PALETTE[prefs.chips.length % PALETTE.length];
@@ -1454,12 +1492,7 @@
     reserve: function (el) { prefs.reserve = Math.max(0, Math.min(20, prefs.reserve + Number(el.dataset.by))); changed(); },
     pick: function (el) { prefs.pick = parseInt(el.dataset.pick, 10) || 0; savePrefs(); render(); },
     display: function (el) { prefs.display = el.dataset.display; savePrefs(); render(); },
-    'edit-box': function (el) {
-      ui.boxEdit = true;
-      ui.boxCustom = false;
-      if (el && el.dataset.custom) openEditor(); // something needs fixing: straight to the rows
-      go('box', 'fwd');
-    },
+    'edit-box': function () { ui.boxEdit = true; leaveEditor(false); go('box', 'fwd'); }, // always the list first
     'start-game': startGame,
 
     'open-game': function (el) { openGame(el.dataset.id); },
@@ -1640,6 +1673,7 @@
       } else if (field === 'chip-name') chip.name = el.value;
       else if (field === 'chip-count') { chip.count = el.value; updateChipTotal(); }
       else if (field === 'chip-lock') chip.lock = el.value;
+      showMissing();
       prefs.pick = 0;
       savePrefs();
     } else if (field === 'count-chip') {
