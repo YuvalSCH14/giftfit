@@ -1384,7 +1384,8 @@
   function installTipShown() {
     var ios = /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     var installed = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-    return ios && !installed && !prefs.tipDismissed;
+    var framed = window.top !== window.self; // shown inside another page: there is nothing to install from here
+    return ios && !installed && !framed && !prefs.tipDismissed;
   }
 
   /* The screen is exactly as tall as what's visible, so when the keyboard slides up the
