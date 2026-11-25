@@ -103,6 +103,8 @@ em { font-style: normal; font-weight: 600; }
 .bar { flex: none; height: 52px; display: flex; align-items: center; gap: 8px; margin-inline: -8px; padding-inline: 8px; }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--on-felt-2); }
 .brand-mark { width: 14px; height: 14px; fill: var(--on-felt); flex: none; }
+.ver { min-height: 36px; min-width: 44px; margin-left: 2px; padding: 0 10px; border: 1px solid var(--on-felt-line); border-radius: 999px; background: none; color: var(--on-felt-2); font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ver:active { background: var(--on-felt-wash); }
 .grow { flex: 1 1 0; min-height: 0; min-width: 0; }
 .bar-pad { width: var(--tap); flex: none; }
 .bar-title { flex: 1; min-width: 0; text-align: center; display: grid; line-height: 1.2; }
@@ -532,6 +534,7 @@ button.row:active { background: var(--card-inset); }
 .choice-text small { font-size: 14.5px; color: var(--ink-2); }
 .choice-chips { display: flex; flex: none; }
 .choice-chips .chip + .chip { margin-left: -7px; }
+.choice.saved { box-shadow: 0 0 0 2px var(--on-felt), 0 14px 30px -14px rgba(0, 0, 0, 0.65); }
 .choice.quiet { min-height: 64px; background: none; color: var(--on-felt); box-shadow: inset 0 0 0 1.5px var(--on-felt-line); }
 .choice.quiet .choice-text b { font-size: 18px; }
 .choice.quiet .choice-text small { color: var(--on-felt-2); }
@@ -608,7 +611,9 @@ button.row:active { background: var(--card-inset); }
   .amount select, .amount input[type='text'], .amount-cur { height: 62px; font-size: 32px; }
   .big-stepper output { font-size: 72px; }
   .big-stepper button { width: 56px; height: 56px; }
-  .choice { min-height: 68px; }
+  .choice { min-height: 60px; padding-block: 8px; }
+  .choice.quiet { min-height: 52px; }
+  .choices { gap: 8px; }
   .hero-result b { font-size: 42px; }
   .stack i { height: 6px; }
   .count-row { padding: 4px 0; }

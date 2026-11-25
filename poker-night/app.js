@@ -14,6 +14,7 @@
   var LOCAL_KEY = 'pokernight.local'; // games played without an account
   var CACHE_KEY = 'pokernight.cache'; // last answer from the server, shown while the next one loads
   var MAX_PLAYERS = Core.MAX_PLAYERS;
+  var VERSION = window.POKER_VERSION || '?'; // from version.js; shown on the home screen
 
   var PALETTE = [
     ['White', '#f1efe6'], ['Red', '#c8372d'], ['Blue', '#2f5fb3'], ['Green', '#2e8b57'], ['Black', '#23272c'],
@@ -149,7 +150,7 @@
   function defaults() {
     return {
       v: 2, signedIn: false, currency: localCurrency(), chips: presetChips(300), buyIn: '20', reserve: 2, style: 'classic',
-      display: 'cash', pick: 0, showWorth: false, boxOk: false, tipDismissed: false, friendIds: [], count: 6,
+      display: 'cash', pick: 0, showWorth: false, boxOk: false, custom: false, boxAt: 0, boxDirty: false, tipDismissed: false, friendIds: [], count: 6,
       name: rollName(), pending: null,
     };
   }
@@ -179,6 +180,14 @@
     s.count = Math.max(2, Math.min(MAX_PLAYERS, parseInt(s.count, 10) || 6));
     delete s.guests; // from before the player count became one number
     s.signedIn = !!s.signedIn; s.showWorth = !!s.showWorth; s.boxOk = !!s.boxOk; s.tipDismissed = !!s.tipDismissed;
+    if (typeof saved.custom !== 'boolean') { // from before sets could be saved: anything that isn't a standard case is their own
+      var standard = Object.keys(PRESETS).some(function (key) {
+        return PRESETS[key].length === s.chips.length && PRESETS[key].every(function (row, i) { return s.chips[i].name === row[0] && s.chips[i].count === String(row[1]) && !s.chips[i].lock; });
+      });
+      s.custom = s.boxOk && !standard;
+      s.boxDirty = s.boxOk;
+    }
+    s.custom = !!s.custom; s.boxDirty = !!s.boxDirty; s.boxAt = Number(s.boxAt) || 0;
     if (!s.pending || typeof s.pending !== 'object') s.pending = null;
     return s;
   }
@@ -247,10 +256,62 @@
     if (!on) { try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* nothing to clear */ } }
     savePrefs();
   }
+  /* ── The chip set, kept with the account ───
+   * It lives on this phone either way. Signed in, it is also saved to the account, so a new or
+   * reinstalled phone gets it back. Whichever side changed last wins.
+   */
+  var boxBefore = null;
+  function openEditor() {
+    boxBefore = JSON.stringify({ chips: prefs.chips, showWorth: prefs.showWorth });
+    ui.boxCustom = true;
+  }
+  function leaveEditor(keep) {
+    if (!keep && boxBefore) {
+      var was = JSON.parse(boxBefore);
+      prefs.chips = was.chips;
+      prefs.showWorth = was.showWorth;
+      prefs.pick = 0;
+      savePrefs();
+    }
+    boxBefore = null;
+    ui.boxCustom = false;
+  }
+  function saveBox() {
+    prefs.boxOk = true;
+    prefs.boxDirty = true; // not on the account yet
+    savePrefs();
+    if (!prefs.signedIn) return;
+    call('POST', 'box', {
+      numbers: numbersOn(), custom: prefs.custom,
+      chips: prefs.chips.map(function (c) { return { name: c.name, color: c.color, count: c.count, number: c.lock }; }),
+    }).then(function (r) {
+      prefs.boxAt = r.box.at;
+      prefs.boxDirty = false;
+      data.box = r.box;
+      savePrefs();
+    }, function () { /* still on this phone; sent again on the next refresh */ });
+  }
+  function syncBox() {
+    if (!prefs.signedIn || ui.screen === 'box') return; // never swap the set under someone editing it
+    var theirs = data.box;
+    if (prefs.boxDirty && prefs.boxOk) return saveBox();
+    if (!theirs) { if (prefs.boxOk) saveBox(); return; }
+    if (theirs.at <= (prefs.boxAt || 0) || !Array.isArray(theirs.chips) || !theirs.chips.length) return;
+    prefs.chips = theirs.chips.map(function (c) {
+      return { id: rid(7), name: String(c.name || ''), color: validHex(c.color), count: String(c.count || ''), lock: String(c.number || '') };
+    });
+    prefs.showWorth = !!theirs.numbers;
+    prefs.custom = !!theirs.custom;
+    prefs.boxOk = true;
+    prefs.boxAt = theirs.at;
+    prefs.pick = 0;
+    savePrefs();
+  }
   function refresh() {
     return call('GET', 'state').then(function (d) {
       var changed = JSON.stringify(d) !== JSON.stringify(data);
       data = d;
+      syncBox();
       if (prefs.signedIn) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(d)); } catch (e) { /* fine */ } }
       if (changed) softRender();
       return d;
@@ -362,7 +423,8 @@
   }
   function frame(o) {
     var left = o.back ? '<button class="icon-btn glass" data-act="back" aria-label="Back">' + ICON.back + '</button>'
-      : '<span class="brand">' + ICON.spade + 'Poker Night</span>';
+      : '<span class="brand">' + ICON.spade + 'Poker Night</span>' +
+        (ui.screen === 'home' ? '<button class="ver" data-act="check-update" aria-label="Version ' + esc(VERSION) + '. Tap to check for an update.">v' + esc(VERSION) + '</button>' : '');
     var mid = o.title != null ? '<div class="bar-title"><b>' + o.title + '</b>' + (o.sub ? '<small>' + o.sub + '</small>' : '') + '</div>'
       : o.dots || '<span class="grow"></span>';
     return '<div class="screen ' + ui.anim + '" data-screen="' + ui.screen + '">' +
@@ -549,11 +611,17 @@
           var chips = PRESETS[key].map(function (row) { return '<span class="chip sm" style="' + chipStyle(presetColour(row[0])) + '"></span>'; }).join('');
           return '<button class="choice" data-act="pick-set" data-set="' + key + '"><span class="choice-text"><b>' + title + '</b><small>' + sub + '</small></span><span class="choice-chips">' + chips + '</span></button>';
         };
+        var mine = '';
+        if (prefs.custom && prefs.boxOk) {
+          var total = prefs.chips.reduce(function (a, c) { return a + chipCount(c); }, 0);
+          mine = '<button class="choice saved" data-act="use-saved"><span class="choice-text"><b>Your chip set</b><small>' + fmtNumber(total, 0) + ' chips' + (numbersOn() ? ' · with numbers' : '') + ' · saved</small></span>' +
+            '<span class="choice-chips">' + prefs.chips.slice(0, 6).map(function (c) { return '<span class="chip sm" style="' + chipStyle(c.color) + '"></span>'; }).join('') + '</span></button>';
+        }
         return frame({
           back: true, dots: dots(),
-          body: '<h1>Which chip set do you have?</h1><p class="lede">You only pick this once.</p><div class="grow"></div><div class="choices">' +
+          body: '<h1>Which chip set do you have?</h1><p class="lede">' + (mine ? 'Your own set is saved. Tap it to use it.' : 'You only pick this once.') + '</p><div class="grow"></div><div class="choices">' + mine +
             set('300', '300 chips', 'The usual case') + set('500', '500 chips', 'The big case') +
-            '<button class="choice quiet" data-act="custom-set"><span class="choice-text"><b>Something else</b><small>Tell the app what’s in it</small></span><span class="choice-go">' + ICON.back + '</span></button>' +
+            '<button class="choice quiet" data-act="custom-set"><span class="choice-text"><b>' + (mine ? 'Change your set' : 'Something else') + '</b><small>' + (mine ? 'Colours, counts or numbers' : 'Tell the app what’s in it') + '</small></span><span class="choice-go">' + ICON.back + '</span></button>' +
             '</div><div class="grow two"></div>',
         });
       }
@@ -576,7 +644,7 @@
           '<div class="row-actions"><button class="link" data-act="add-chip">+ Add a colour</button>' +
           '<button class="link quiet" data-act="toggle-worth">' + (worth ? 'My chips have no numbers' : 'My chips have numbers on them') + '</button></div>' +
           (worth ? '<p class="hint">Type the number printed on each chip. The app works out what a buy-in gets.</p>' : '') + '</div>',
-        dock: '<button class="btn primary big" data-act="next">Done</button>',
+        dock: '<div class="dock-row"><button class="btn" data-act="reset-box">Reset</button><button class="btn primary big" data-act="next">Save</button></div>',
       });
     },
 
@@ -1018,7 +1086,7 @@
   function goTab(tab) {
     var from = TABS.indexOf(ui.screen), to = TABS.indexOf(tab);
     ui.boxEdit = false;
-    ui.boxCustom = false;
+    leaveEditor(false);
     go(tab, from < 0 || from === to ? 'fade' : to > from ? 'fwd' : 'back');
     if (prefs.signedIn) refresh().catch(function () { /* keep what we have */ });
   }
@@ -1246,10 +1314,10 @@
     },
     back: function () {
       var s = ui.screen, list = steps(), at = list.indexOf(s);
-      if (s === 'box' && ui.boxCustom) { ui.boxCustom = false; ui.anim = 'back'; return render(); }
+      if (s === 'box' && ui.boxCustom) { leaveEditor(false); ui.anim = 'back'; return render(); } // back without saving: as it was
       if (s === 'box' && ui.boxEdit && prefs.boxOk) { ui.boxEdit = false; return go('split', 'back'); }
       if (at > 0) return go(list[at - 1], 'back');
-      if (at === 0) { ui.boxEdit = false; ui.boxCustom = false; }
+      if (at === 0) { ui.boxEdit = false; leaveEditor(false); }
       if (s === 'count') return go(ui.cameFrom === 'settle' ? 'settle' : 'table', 'back');
       if (s === 'settle') return go('table', 'back');
       if (s === 'account' && prefs.pending) { prefs.pending = null; savePrefs(); }
@@ -1262,11 +1330,12 @@
           if (blank) blank.focus();
           return toast('Type the number on every colour');
         }
-        prefs.boxOk = true;
+        prefs.custom = true;
         ui.boxEdit = false;
-        ui.boxCustom = false;
-        savePrefs();
-        return go('split');
+        leaveEditor(true);
+        saveBox();
+        go('split');
+        return toast(prefs.signedIn ? 'Chip set saved to your account' : 'Chip set saved on this phone');
       }
       var list = steps(), at = list.indexOf(ui.screen);
       go(list[Math.min(list.length - 1, at + 1)]);
@@ -1281,9 +1350,21 @@
       if (fn) fn();
     },
     'dismiss-tip': function () { prefs.tipDismissed = true; savePrefs(); render(); },
+    /* Tapping the version asks the server whether there is a newer one, and switches to it. */
+    'check-update': function () {
+      if (!('serviceWorker' in navigator)) return toast('Version ' + VERSION);
+      toast('Checking for an update…');
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (!reg) return location.reload();
+        return reg.update().then(function () {
+          if (reg.installing || reg.waiting) { wantReload = true; toast('Updating…'); }
+          else toast('Version ' + VERSION + ' is the latest');
+        });
+      }).catch(function () { toast('Can’t check right now. Version ' + VERSION); });
+    },
     'login-instead': function () { ui.seg.account = 'login'; go('account'); },
 
-    'new-game': function () { ui.boxEdit = false; ui.boxCustom = false; go('players'); },
+    'new-game': function () { ui.boxEdit = false; leaveEditor(false); go('players'); },
     'players-step': function (el) {
       var least = Math.max(2, 1 + selFriends().length);
       prefs.count = Math.max(least, Math.min(MAX_PLAYERS, playerCount() + Number(el.dataset.by)));
@@ -1302,15 +1383,33 @@
     'quick-buy': function (el) { prefs.buyIn = el.dataset.buy; changed(); },
     pace: function (el) { prefs.style = el.dataset.style; changed(); },
     'pick-set': function (el) {
-      prefs.chips = presetChips(el.dataset.set); // plain chips, no numbers
-      prefs.showWorth = false;
-      prefs.boxOk = true;
-      prefs.pick = 0;
-      ui.boxEdit = false;
-      savePrefs();
-      go('split');
+      var key = el.dataset.set;
+      var use = function () {
+        prefs.chips = presetChips(key); // plain chips, no numbers
+        prefs.showWorth = false;
+        prefs.custom = false;
+        prefs.pick = 0;
+        ui.boxEdit = false;
+        saveBox();
+        go('split');
+      };
+      if (prefs.custom && prefs.boxOk) return ask('Switch to the ' + key + '-chip set?', 'It replaces your own saved chip set.', 'Switch', use);
+      use();
     },
-    'custom-set': function () { ui.boxCustom = true; ui.anim = 'fwd'; render(); },
+    'use-saved': function () { ui.boxEdit = false; go('split'); },
+    /* Start the editor again from a clean, plain set. Nothing saved changes until Save is pressed. */
+    'reset-box': function () {
+      ask('Start this chip set again?', 'Colours, counts and numbers go back to a plain 300-chip set. Nothing is saved until you tap Save.', 'Reset', function () {
+        prefs.chips = presetChips('300');
+        prefs.showWorth = false;
+        prefs.pick = 0;
+        savePrefs();
+        ui.anim = 'fade';
+        render();
+        toast('Back to a plain set');
+      });
+    },
+    'custom-set': function () { openEditor(); ui.anim = 'fwd'; render(); },
     'add-chip': function () {
       var used = prefs.chips.map(function (c) { return c.color.toLowerCase(); });
       var next = PALETTE.filter(function (p) { return used.indexOf(p[1]) < 0; })[0] || PALETTE[prefs.chips.length % PALETTE.length];
@@ -1337,7 +1436,12 @@
     reserve: function (el) { prefs.reserve = Math.max(0, Math.min(20, prefs.reserve + Number(el.dataset.by))); changed(); },
     pick: function (el) { prefs.pick = parseInt(el.dataset.pick, 10) || 0; savePrefs(); render(); },
     display: function (el) { prefs.display = el.dataset.display; savePrefs(); render(); },
-    'edit-box': function (el) { ui.boxEdit = true; ui.boxCustom = !!(el && el.dataset.custom) || numbersOn(); go('box', 'fwd'); },
+    'edit-box': function (el) {
+      ui.boxEdit = true;
+      ui.boxCustom = false;
+      if ((el && el.dataset.custom) || (numbersOn() && !prefs.custom)) openEditor(); // something needs fixing: straight to the rows
+      go('box', 'fwd');
+    },
     'start-game': startGame,
 
     'open-game': function (el) { openGame(el.dataset.id); },
@@ -1480,6 +1584,7 @@
   }
 
   /* ── Wiring ──────────────────────────────── */
+  var wantReload = false; // someone asked for the update, so take it the moment it is ready
   var lastSwipe = 0;
   document.addEventListener('click', function (e) {
     if (Date.now() - lastSwipe < 300) return; // the finger that swiped is not also pressing a button
@@ -1715,7 +1820,8 @@
     // next launch. Only on the three top-level screens, so it never interrupts a game or a form.
     var hadWorker = !!navigator.serviceWorker.controller, opened = Date.now(), reloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (!hadWorker || reloaded || Date.now() - opened > 15000 || TABS.indexOf(ui.screen) < 0 || ui.sheet) return;
+      if (reloaded) return;
+      if (!wantReload && (!hadWorker || Date.now() - opened > 15000 || TABS.indexOf(ui.screen) < 0 || ui.sheet)) return;
       reloaded = true;
       location.reload();
     });

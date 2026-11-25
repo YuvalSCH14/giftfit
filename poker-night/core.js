@@ -27,6 +27,7 @@
     sent: function (id) { return 'pn:sent:' + id; }, // people this person asked
     games: function (id) { return 'pn:games:' + id; },
     game: function (id) { return 'pn:game:' + id; },
+    box: function (id) { return 'pn:box:' + id; }, // this person's chip set
   };
 
   /* ── Storage stand-in ────────────────────────
@@ -243,6 +244,7 @@
     async function state(me) {
       var r = await store.pipeline([
         ['SMEMBERS', K.friends(me.id)], ['SMEMBERS', K.reqs(me.id)], ['SMEMBERS', K.sent(me.id)], ['SMEMBERS', K.games(me.id)],
+        ['GET', K.box(me.id)],
       ]);
       var users = await getUsers(unique(r[0].concat(r[1], r[2])));
       var people = function (ids) {
@@ -261,7 +263,28 @@
       return {
         me: { id: me.id, username: me.username, name: me.name, code: me.code || '' },
         friends: people(r[0]), requests: people(r[1]), sent: people(r[2]), games: games.slice(0, MAX_GAMES),
+        box: parse(r[4], null),
       };
+    }
+
+    /* The chip set someone owns: colours, how many of each, and the number printed on them if
+     * there is one. Saved so it follows the account to a new phone. */
+    async function saveBox(me, body) {
+      var raw = Array.isArray(body.chips) ? body.chips : [];
+      if (raw.length < 1 || raw.length > 12) fail(400, 'bad_box', 'A chip set has between 1 and 12 colours.');
+      var typed = function (v, max, keep) { return str(String(v == null ? '' : v), max).replace(keep, ''); };
+      var box = {
+        at: now(), numbers: !!body.numbers, custom: !!body.custom,
+        chips: raw.map(function (c) {
+          c = c && typeof c === 'object' ? c : {};
+          return {
+            name: str(c.name, 18), color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : '#888888',
+            count: typed(c.count, 5, /[^0-9]/g), number: typed(c.number, 8, /[^0-9.,]/g),
+          };
+        }),
+      };
+      await store.cmd('SET', K.box(me.id), JSON.stringify(box));
+      return { box: box };
     }
 
     async function friends(me, action, body) {
@@ -512,6 +535,7 @@
       if (method === 'GET' && path === 'state') return state(me);
       if (method === 'POST' && seg[0] === 'friends' && seg.length === 2) return friends(me, seg[1], body);
       if (method === 'POST' && path === 'games') return createGame(me, body);
+      if (method === 'POST' && path === 'box') return saveBox(me, body);
       if (seg[0] === 'games' && /^[a-z0-9]{6,32}$/.test(seg[1] || '')) {
         if (method === 'GET' && seg.length === 2) return viewGame(me, seg[1]);
         if (method === 'POST' && seg.length === 3 && seg[2] === 'join') return joinGame(me, seg[1], body);

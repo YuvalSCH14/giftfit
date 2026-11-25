@@ -216,3 +216,28 @@ test('without an account the same rules run for one phone, minus friends', async
   assert.equal((await t.call('me', 'GET', 'state')).games[0].status, 'done');
   assert.equal((await t.call('stranger', 'GET', 'state')).code, 'signed_out');
 });
+
+test('a chip set is saved with the account and only its owner sees it', async () => {
+  const t = setup();
+  await t.addUser('a', 'dana', 'Dana');
+  await t.addUser('b', 'omer', 'Omer');
+  assert.equal((await t.call('a', 'GET', 'state')).box, null);
+  const saved = await t.call('a', 'POST', 'box', {
+    numbers: true, custom: true,
+    chips: [{ name: ' Red ', color: '#c8372d', count: '100', number: '5' }, { name: 'Black', color: 'not-a-colour', count: 25, number: '1,000x' }],
+  });
+  assert.deepEqual(saved.box.chips, [
+    { name: 'Red', color: '#c8372d', count: '100', number: '5' },
+    { name: 'Black', color: '#888888', count: '25', number: '1,000' },
+  ]);
+  assert.equal(saved.box.numbers, true);
+  const mine = (await t.call('a', 'GET', 'state')).box;
+  assert.deepEqual(mine, saved.box);
+  assert.equal((await t.call('b', 'GET', 'state')).box, null);
+  // saving again replaces it, with a later time
+  const again = await t.call('a', 'POST', 'box', { chips: [{ name: 'White', color: '#f1efe6', count: '300' }] });
+  assert.ok(again.box.at > saved.box.at);
+  assert.equal((await t.call('a', 'GET', 'state')).box.chips.length, 1);
+  assert.equal((await t.call('a', 'POST', 'box', { chips: [] })).code, 'bad_box');
+  assert.equal((await t.call('a', 'POST', 'box', { chips: new Array(13).fill({ name: 'x' }) })).code, 'bad_box');
+});

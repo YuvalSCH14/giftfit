@@ -83,3 +83,10 @@ test('a game remembers the rate only when every chip is a whole number at it', a
   assert.equal((await make(undefined)).rate, null);
   assert.equal((await make(1)).rate, null); // one point to the unit is just money
 });
+
+test('the version on the home screen and the offline cache agree', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const shown = /POKER_VERSION = '([^']+)'/.exec(fs.readFileSync(path.join(__dirname, '..', 'version.js'), 'utf8'))[1];
+  const cache = /VERSION = 'poker-night-v([^']+)'/.exec(fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8'))[1];
+  assert.equal(shown, cache);
+});

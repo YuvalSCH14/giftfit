@@ -1,12 +1,13 @@
 /* Poker Night — offline support.
  * The whole app is a handful of files, so they are all kept on the phone. Each one is served from
  * that copy straight away and refreshed in the background, so a new version shows up on the next open.
- * Bump VERSION when a file is added or removed.
+ * Bump VERSION with every release, together with version.js, which is what the home screen shows.
  */
-var VERSION = 'poker-night-v5';
+var VERSION = 'poker-night-v6';
 var SHELL = [
   './',
   'app.css',
+  'version.js',
   'solver.js',
   'core.js',
   'app.js',
