@@ -93,9 +93,9 @@ em { font-style: normal; font-weight: 600; }
   width: 100%; max-width: 500px; height: 100%; min-height: 0; display: flex; flex-direction: column;
   padding: var(--safe-t) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
 }
-.screen.fwd .body, .screen.fwd .dock { animation: in-fwd 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.screen.back .body, .screen.back .dock { animation: in-back 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.screen.fade .body, .screen.fade .dock { animation: in-fade 0.2s ease both; }
+.screen.fwd .body, .screen.fwd .dock { animation: in-fwd 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.screen.back .body, .screen.back .dock { animation: in-back 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.screen.fade .body, .screen.fade .dock { animation: in-fade 0.18s ease both; }
 @keyframes in-fwd { from { opacity: 0; transform: translateX(28px); } }
 @keyframes in-back { from { opacity: 0; transform: translateX(-28px); } }
 @keyframes in-fade { from { opacity: 0; } }
@@ -128,6 +128,7 @@ em { font-style: normal; font-weight: 600; }
 .body::-webkit-scrollbar, .scroll::-webkit-scrollbar { display: none; }
 .body > * { flex: none; }
 .body > .grow { flex: 1 1 0; }
+.body > .grow.two { flex: 2 1 0; }
 .body > .scroll { flex: 0 1 auto; min-height: 64px; }
 .scroll { overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .lede { color: var(--on-felt-2); font-size: 15.5px; margin-top: -4px; }
@@ -192,9 +193,6 @@ button.glass:active { transform: scale(1.08); background: linear-gradient(180deg
 .tabs button[aria-selected='true'] { color: #fff; }
 .badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--red); color: #fff; font: 700 11px/18px var(--body); font-style: normal; text-align: center; }
 
-.game-nav { --pad: 4px; flex: none; display: grid; grid-template-columns: repeat(3, 1fr); padding: var(--pad); margin: 2px 0 6px; border-radius: 999px; }
-.game-nav button { min-height: 36px; border: 0; border-radius: 999px; background: none; color: var(--on-felt-2); font-size: 14.5px; font-weight: 600; transition: color 0.2s; }
-.game-nav button[aria-current='step'] { color: #fff; }
 
 /* ── Buttons, fields ─────────────────────── */
 .btn {
@@ -401,10 +399,7 @@ label.chip:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
   background: #fff; color: var(--ink); font: 800 12px/1 var(--body);
   box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px rgba(0, 0, 0, 0.25), 0 3px 6px rgba(0, 0, 0, 0.5);
 }
-.felt-hint { text-align: center; font-size: 14px; color: var(--on-felt-2); margin-top: -6px; }
-.chips-row { display: flex; justify-content: center; gap: 6px; }
-.chips-row button { flex: 0 1 auto; min-width: 0; min-height: 40px; padding: 0 14px; border: 1px solid var(--on-felt-line); border-radius: 999px; background: none; color: var(--on-felt); font-size: 14.5px; font-weight: 600; white-space: nowrap; }
-.chips-row button:active { background: var(--on-felt-wash); }
+.felt-hint { text-align: center; font-size: 14.5px; color: var(--on-felt-2); margin-top: -6px; min-height: 21px; }
 
 /* ── Counting ────────────────────────────── */
 .count-rows { display: grid; padding-block: 4px; }
@@ -475,8 +470,12 @@ button.row:active { background: var(--card-inset); }
   padding: 10px max(18px, env(safe-area-inset-right, 0px)) calc(16px + var(--safe-b)) max(18px, env(safe-area-inset-left, 0px));
   background: var(--card); color: var(--ink); border-radius: 22px 22px 0 0; box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.45);
 }
-.sheet-wrap.in { animation: in-fade 0.2s ease both; }
-.sheet-wrap.in .sheet { animation: sheet-up 0.28s cubic-bezier(0.2, 0.85, 0.2, 1) both; }
+.sheet-wrap.in { animation: in-fade 0.18s ease both; }
+.sheet-wrap.out { pointer-events: none; animation: out-fade 0.17s ease both; }
+.sheet-wrap.out .sheet { animation: sheet-down 0.17s ease-in both; }
+@keyframes out-fade { to { opacity: 0; } }
+@keyframes sheet-down { to { transform: translateY(30%); } }
+.sheet-wrap.in .sheet { animation: sheet-up 0.24s cubic-bezier(0.2, 0.85, 0.2, 1) both; }
 @keyframes sheet-up { from { transform: translateY(40%); opacity: 0.4; } }
 .grab { justify-self: center; width: 38px; height: 4px; border-radius: 2px; background: var(--rule-strong); margin-bottom: -4px; }
 .sheet-head { display: flex; align-items: center; gap: 12px; }
@@ -509,15 +508,91 @@ button.row:active { background: var(--card-inset); }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ── The set-up screens ──────────────────── */
+.big-stepper { display: flex; align-items: center; justify-content: center; gap: 22px; }
+.big-stepper button {
+  width: 64px; height: 64px; flex: none; border: 1.5px solid var(--on-felt-line); border-radius: 50%; background: var(--on-felt-wash); color: var(--on-felt);
+  font-size: 30px; line-height: 1; transition: transform 0.12s, background 0.12s, opacity 0.12s;
+}
+.big-stepper button:active { transform: scale(0.92); background: rgba(244, 239, 226, 0.22); }
+.big-stepper button:disabled { opacity: 0.3; }
+.big-stepper output { min-width: 124px; text-align: center; font: 700 96px/1 var(--display); font-variant-numeric: tabular-nums; }
+.caption { text-align: center; color: var(--on-felt-2); font-size: 15.5px; margin-top: -2px; }
+.felt-label { font-size: 14px; font-weight: 600; color: var(--on-felt-2); margin-top: 10px; }
+.choices { display: grid; gap: 12px; }
+.choice {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 84px; padding: 14px 18px; text-align: left;
+  border: 0; border-radius: var(--r-card); background: var(--card); color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 30px -14px rgba(0, 0, 0, 0.65); transition: transform 0.12s;
+}
+.choice:active { transform: scale(0.98); }
+.choice-text { display: grid; min-width: 0; }
+.choice-text b { font: 700 22px/1.2 var(--display); }
+.choice-text small { font-size: 14.5px; color: var(--ink-2); }
+.choice-chips { display: flex; flex: none; }
+.choice-chips .chip + .chip { margin-left: -7px; }
+.choice.quiet { min-height: 64px; background: none; color: var(--on-felt); box-shadow: inset 0 0 0 1.5px var(--on-felt-line); }
+.choice.quiet .choice-text b { font-size: 18px; }
+.choice.quiet .choice-text small { color: var(--on-felt-2); }
+.choice-go svg { width: 20px; height: 20px; display: block; transform: scaleX(-1); fill: none; stroke: var(--on-felt-2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── Results ─────────────────────────────── */
+.hero-result { text-align: center; padding: 2px 0 6px; }
+.hero-result small { display: block; font-size: 15px; font-weight: 600; color: var(--on-felt-2); }
+.hero-result b { display: block; font: 700 clamp(46px, 15vw, 64px)/1.05 var(--display); font-variant-numeric: tabular-nums; }
+.hero-result.up b { color: #8fe0b3; }
+.hero-result.down b { color: #f2a199; }
+.row.pay.mine { width: auto; margin-inline: -16px; padding-inline: 16px; background: var(--card-inset); border-top-color: transparent; }
+.row.pay.mine + .row { border-top-color: transparent; }
+.tick { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: #fff; font-size: 14px; font-weight: 700; }
+.sheet-label { font-size: 13.5px; font-weight: 600; color: var(--ink-2); margin-bottom: -6px; }
+.menu { display: grid; }
+.menu-item {
+  display: flex; align-items: center; justify-content: space-between; min-height: 54px; padding: 0 2px; border: 0; border-top: 1px solid var(--rule); background: none;
+  color: var(--ink); font-size: 16.5px; font-weight: 600; text-align: left;
+}
+.menu-item:first-child { border-top: 0; }
+.menu-item::after { content: ''; width: 8px; height: 8px; border: solid var(--ink-3); border-width: 2px 2px 0 0; transform: rotate(45deg); margin-right: 4px; flex: none; }
+.menu-item:active { background: var(--card-inset); }
+.menu-item.danger { color: var(--red); }
+
+/* ── Small, quick movements ──────────────────
+ * Things arrive in order when a screen opens, numbers tick when they change, and whatever was
+ * just touched answers. Nothing runs longer than about a quarter of a second, and nothing
+ * replays when the screen is merely redrawn.
+ */
+@keyframes row-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.86); } }
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.16); } 100% { transform: scale(1); } }
+@keyframes seat-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); } }
+@keyframes bump { 0% { transform: scale(1); } 35% { transform: scale(1.22); } 100% { transform: scale(1); } }
+.screen:is(.fwd, .back, .fade) :is(.row, .choice, .game-card, .menu-item) { animation: row-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(min(var(--n, 0), 8) * 26ms + 50ms); }
+.screen:is(.fwd, .back, .fade) .choice:nth-child(2), .screen:is(.fwd, .back, .fade) .game-card:nth-child(2) { animation-delay: 90ms; }
+.screen:is(.fwd, .back, .fade) .choice:nth-child(3) { animation-delay: 130ms; }
+.screen:is(.fwd, .back, .fade) .tile { animation: pop-in 0.2s cubic-bezier(0.3, 1.3, 0.5, 1) both; animation-delay: 60ms; }
+.screen:is(.fwd, .back, .fade) .seat { animation: seat-in 0.24s cubic-bezier(0.3, 1.3, 0.5, 1) both; animation-delay: calc(var(--n, 0) * 24ms + 60ms); }
+.screen:is(.fwd, .back, .fade) :is(.hero-result b, .big-stepper output, .fc-pot) { animation: pop-in 0.26s cubic-bezier(0.3, 1.3, 0.5, 1) both; animation-delay: 60ms; }
+.sheet-wrap.in .menu-item, .sheet-wrap.in .sheet .tile, .sheet-wrap.in .sheet .row { animation: row-in 0.2s ease both; animation-delay: 70ms; }
+.pop { animation: pop 0.2s ease; }
+.seat.bump .avatar { animation: bump 0.4s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.tick, .done-badge, .rebuy-badge { animation: pop-in 0.22s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+.screen:not(.fwd):not(.back):not(.fade) :is(.tick, .done-badge, .rebuy-badge) { animation: none; }
+.seat.bump .rebuy-badge { animation: pop-in 0.3s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+/* Sideways drags on the three tabs are ours; up and down stays with the lists. */
+.screen:is([data-screen='home'], [data-screen='friends'], [data-screen='history']) { touch-action: pan-y; }
+.screen:is([data-screen='home'], [data-screen='friends'], [data-screen='history']) :is(.body, .dock) { will-change: transform; }
+
 /* ── A mouse can hover; a thumb can't ─────── */
 @media (hover: hover) {
-  .quick button:not(.on):hover, .chips-row button:hover { background: var(--on-felt-wash); }
-  .tabs button:hover, .game-nav button:hover, .felt-link:hover { color: #fff; }
+  .quick button:not(.on):hover { background: var(--on-felt-wash); }
+  .tabs button:hover, .felt-link:hover { color: #fff; }
   button.glass:hover { background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1)); }
   .btn:not(.primary):not(:disabled):hover { background: var(--on-felt-wash); }
   .panel .btn:not(.primary):hover, .sheet .btn:not(.primary):hover, button.row:hover, .stepper button:hover, .icon-btn.dark:hover { background: var(--card-inset); }
   .segmented button:not([aria-checked='true']):hover { background: var(--card-inset); }
   .option:not([aria-pressed='true']):hover { border-color: var(--ink); }
+  .menu-item:hover { background: var(--card-inset); }
+  .big-stepper button:not(:disabled):hover { background: rgba(244, 239, 226, 0.2); }
   .x-btn:hover { color: var(--red); }
   .link:hover { text-decoration-color: currentColor; }
   label.chip:hover { transform: rotate(22deg); }
@@ -530,6 +605,10 @@ button.row:active { background: var(--card-inset); }
   .art { margin-bottom: 8px; }
   .art .stack i { width: 46px; height: 7px; }
   .amount select, .amount input[type='text'], .amount-cur { height: 62px; font-size: 32px; }
+  .big-stepper output { font-size: 72px; }
+  .big-stepper button { width: 56px; height: 56px; }
+  .choice { min-height: 68px; }
+  .hero-result b { font-size: 42px; }
   .stack i { height: 6px; }
   .count-row { padding: 4px 0; }
   .row { min-height: 46px; padding: 4px 0; }
@@ -542,8 +621,6 @@ button.row:active { background: var(--card-inset); }
   .screen[data-screen='box'] .lede, .screen[data-screen='count'] .lede, .fine { display: none; }
   .form { gap: 8px; }
   .form input { height: 44px; }
-  .game-nav { margin-bottom: 2px; }
-  .game-nav button { min-height: 34px; }
 }
 @media (max-width: 359px) {
   .tiles { gap: 12px 2px; }
@@ -551,7 +628,6 @@ button.row:active { background: var(--card-inset); }
   .felt { inset-inline: 32px; }
   .fc-sub + .fc-sub { display: none; }
   .with-worth .chip-rows-head, .with-worth .chip-row { grid-template-columns: 36px minmax(0, 1fr) 54px 60px 28px; gap: 4px; }
-  .chips-row button { padding: 0 10px; font-size: 13.5px; }
   .panel { padding-inline: 12px; }
 }
 

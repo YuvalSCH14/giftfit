@@ -3,7 +3,7 @@
  * that copy straight away and refreshed in the background, so a new version shows up on the next open.
  * Bump VERSION when a file is added or removed.
  */
-var VERSION = 'poker-night-v3';
+var VERSION = 'poker-night-v4';
 var SHELL = [
   './',
   'app.css',
