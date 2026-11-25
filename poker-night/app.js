@@ -1398,11 +1398,23 @@
     return ios && !installed && !framed && !prefs.tipDismissed;
   }
 
+  /* Installed on an iPhone, the page is laid out one status bar short of the screen (a long-standing
+   * iOS quirk when the status bar is see-through), which leaves an empty strip under the tab bar.
+   * An installed app always fills the screen, so measure the shortfall against the real screen.
+   * Anything bigger than a status bar is something else (an iPad sharing its screen) and is left alone. */
+  function iosShortfall() {
+    if (navigator.standalone !== true) return 0;
+    var portrait = window.matchMedia('(orientation: portrait)').matches;
+    var long = Math.max(screen.width, screen.height), short = Math.min(screen.width, screen.height);
+    if (Math.abs(window.innerWidth - (portrait ? short : long)) > 1) return 0;
+    var gap = (portrait ? long : short) - window.innerHeight;
+    return gap > 0 && gap <= 80 ? gap : 0;
+  }
   /* The screen is exactly as tall as what's visible, so when the keyboard slides up the
    * buttons ride above it instead of hiding behind it. */
   function fitViewport() {
     var vv = window.visualViewport;
-    document.documentElement.style.setProperty('--vh', (vv ? vv.height : window.innerHeight) + 'px');
+    document.documentElement.style.setProperty('--vh', (vv ? vv.height : window.innerHeight) + iosShortfall() + 'px');
     if (vv && vv.offsetTop) window.scrollTo(0, 0);
   }
   if (window.visualViewport) {
@@ -1410,6 +1422,8 @@
     window.visualViewport.addEventListener('scroll', fitViewport);
   }
   window.addEventListener('resize', fitViewport);
+  window.addEventListener('orientationchange', function () { setTimeout(fitViewport, 300); });
+  window.addEventListener('pageshow', fitViewport);
   fitViewport();
 
   /* ── Keeping up with friends' phones ─────── */
@@ -1459,6 +1473,14 @@
   });
 
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    // When a new version takes over just after opening, show it straight away rather than on the
+    // next launch. Only on the three top-level screens, so it never interrupts a game or a form.
+    var hadWorker = !!navigator.serviceWorker.controller, opened = Date.now(), reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadWorker || reloaded || Date.now() - opened > 15000 || TABS.indexOf(ui.screen) < 0 || ui.sheet) return;
+      reloaded = true;
+      location.reload();
+    });
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('sw.js').catch(function () { /* offline use is a bonus, not a requirement */ });
     });

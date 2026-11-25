@@ -59,15 +59,20 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; background: var(--felt); }
+html, body { margin: 0; overflow: hidden; overscroll-behavior: none; }
+/* --vh is the true height of the screen, set by the page script. An installed iPhone app is laid
+ * out one status bar short of the screen, so the document is stretched to the measured height
+ * rather than trusting 100%. The page colour matches the bottom of the felt, so if a strip is
+ * ever left over it cannot be seen. */
+html { height: 100%; min-height: var(--vh, 100%); -webkit-text-size-adjust: 100%; text-size-adjust: 100%; background: var(--felt-edge); }
 body {
+  position: relative; height: var(--vh, 100%);
   font: 16px/1.45 var(--body); color: var(--on-felt);
   -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
 }
 /* The felt: a lamp over the middle of the table, plus a fine nap so it isn't flat colour. */
 body::before {
-  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E"),
     radial-gradient(120% 90% at 50% 0%, var(--felt-lit) 0%, var(--felt) 48%, var(--felt-edge) 100%);
@@ -83,7 +88,7 @@ em { font-style: normal; font-weight: 600; }
 .num, .net, .amt { font-variant-numeric: tabular-nums; }
 
 /* ── The frame every screen shares ───────── */
-.app { position: fixed; top: 0; left: 0; right: 0; height: var(--vh, 100dvh); display: flex; justify-content: center; }
+.app { position: relative; height: 100%; display: flex; justify-content: center; }
 .screen {
   width: 100%; max-width: 500px; height: 100%; min-height: 0; display: flex; flex-direction: column;
   padding: var(--safe-t) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
@@ -538,7 +543,7 @@ button.row:active { background: var(--card-inset); }
   .form { gap: 8px; }
   .form input { height: 44px; }
   .game-nav { margin-bottom: 2px; }
-  .game-nav button { min-height: 32px; }
+  .game-nav button { min-height: 34px; }
 }
 @media (max-width: 359px) {
   .tiles { gap: 12px 2px; }
