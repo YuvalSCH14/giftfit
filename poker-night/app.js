@@ -431,11 +431,10 @@
 
   /* ── Screen furniture ────────────────────── */
   var TABS = ['home', 'friends', 'history'];
-  /* The glass lens under the current tab. It starts where the last screen left it and slides
-   * across, so moving between tabs feels like one piece of glass, not a redraw. */
+  /* The glass lens under the current tab. The tab bar is never redrawn while you stay on the
+   * tabs (see paint), so the lens simply glides from where it is to where it should be. */
   function lens(list) {
-    var at = list.indexOf(ui.screen), from = list.indexOf(ui.from);
-    return '<i class="lens" style="--n:' + list.length + ';--i:' + at + ';--from:' + (from < 0 ? at : from) + '"></i>';
+    return '<i class="lens" style="--n:' + list.length + ';--i:' + list.indexOf(ui.screen) + '"></i>';
   }
   function tabbar() {
     var tab = function (id, label, icon, badge) {
@@ -456,7 +455,7 @@
         (ui.screen === 'home' ? '<button class="ver" data-act="check-update" aria-label="Version ' + esc(VERSION) + '. Tap to check for an update.">v' + esc(VERSION) + '</button>' : '');
     var mid = o.title != null ? '<div class="bar-title"><b>' + o.title + '</b>' + (o.sub ? '<small>' + o.sub + '</small>' : '') + '</div>'
       : o.dots || '<span class="grow"></span>';
-    return '<div class="screen ' + ui.anim + '" data-screen="' + ui.screen + '">' +
+    return '<div class="screen ' + ui.anim + '" data-screen="' + ui.screen + '"' + (ui.anim === 'swipe' ? ' style="--enter:' + ui.enter + 'px"' : '') + '>' +
       '<header class="bar">' + left + mid + (o.right || '<span class="bar-pad"></span>') + '</header>' +
       '<main class="body ' + (o.cls || '') + '">' + o.body + '</main>' +
       (o.dock ? '<footer class="dock">' + o.dock + '</footer>' : '') + (o.tabs ? tabbar() : '') + '</div>';
@@ -1075,6 +1074,34 @@
     });
     seen = { id: g.id, pot: r.pot, rebuys: rebuys };
   }
+  /* Puts a screen on the page. Going from one tab to another, the tab bar itself is left alone
+   * and only what is above it is swapped: a bar that is thrown away and rebuilt cannot glide,
+   * and its glass flickers. Anything marked "ghost" is an old page on its way out. */
+  function paint(html) {
+    var app = $('#app'), nav = app.querySelector('.screen:not(.peek) > .tabs'), next = null, tmp;
+    if (nav) {
+      tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      next = tmp.querySelector('.screen > .tabs');
+    }
+    if (!nav || !next) { app.innerHTML = html; return; }
+    var scr = nav.parentNode, fresh = next.parentNode;
+    scr.className = fresh.className;
+    scr.setAttribute('data-screen', fresh.getAttribute('data-screen'));
+    scr.style.cssText = fresh.style.cssText;
+    while (scr.firstChild !== nav) scr.removeChild(scr.firstChild);
+    while (fresh.firstChild !== next) scr.insertBefore(fresh.firstChild, nav);
+    Array.prototype.slice.call(app.children).forEach(function (el) { if (el !== scr && !el.classList.contains('ghost')) el.remove(); });
+    while (fresh.nextSibling) app.insertBefore(fresh.nextSibling, scr.nextSibling);
+    // the tab bar: move the lens, light the right label, keep the friend-request badge current
+    var glass = nav.querySelector('.lens'), was = nav.querySelectorAll('button'), now = next.querySelectorAll('button');
+    glass.classList.remove('held');
+    glass.style.setProperty('--i', next.querySelector('.lens').style.getPropertyValue('--i'));
+    for (var i = 0; i < was.length; i++) {
+      was[i].setAttribute('aria-selected', now[i].getAttribute('aria-selected'));
+      if (was[i].innerHTML !== now[i].innerHTML) was[i].innerHTML = now[i].innerHTML;
+    }
+  }
   function render() {
     var entering = !!ui.anim;
     var html = screens[ui.screen]();
@@ -1083,8 +1110,7 @@
       if (inner) html += '<div class="sheet-wrap' + (ui.sheetIn ? ' in' : '') + '"><div class="sheet" role="dialog" aria-modal="true"><i class="grab"></i>' + inner + '</div></div>';
       else ui.sheet = null;
     }
-    $('#app').innerHTML = html;
-    ui.from = null;
+    paint(html);
     ui.anim = '';
     ui.sheetIn = false;
     ui.stale = false;
@@ -1105,24 +1131,64 @@
   function pressing() { return Date.now() - pressedAt < 4000; }
   function softRender() {
     var el = document.activeElement;
-    if (ui.dealing || ui.dragging || pressing() || (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName))) { ui.stale = true; return; }
+    if (ui.dealing || ui.dragging || turning() || pressing() || (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName))) { ui.stale = true; return; }
     render();
   }
   function go(screen, dir) {
-    ui.from = ui.screen;
     ui.screen = screen;
     ui.anim = dir || 'fwd';
     ui.sheet = null;
     ui.error = '';
     render();
   }
-  /* Moving between the three tabs slides the way the tabs are laid out. */
-  function goTab(tab) {
+  /* Moving between the three tabs slides the way the tabs are laid out: the old page leaves as
+   * the new one arrives. "swipe" is where a finger let go: { dx: how far it had dragged, w: the
+   * page width }, so the pages carry on from under the finger instead of starting over. */
+  var turnedAt = 0;
+  function turning() { return Date.now() - turnedAt < 300; } // background redraws wait for the pages to land
+  function goTab(tab, swipe) {
     var from = TABS.indexOf(ui.screen), to = TABS.indexOf(tab);
+    var dir = to > from ? 1 : -1, moving = from >= 0 && to >= 0 && from !== to && !calm.matches;
+    var old = moving ? leaving() : null;
     ui.boxEdit = false;
     leaveEditor(false);
-    go(tab, from < 0 || from === to ? 'fade' : to > from ? 'fwd' : 'back');
+    if (moving && swipe) ui.enter = Math.round(swipe.dx + dir * swipe.w);
+    go(tab, !moving ? 'fade' : swipe ? 'swipe' : dir > 0 ? 'fwd' : 'back');
+    if (old) {
+      turnedAt = Date.now();
+      $('#app').appendChild(old.el);
+      old.restore();
+      var w = swipe ? swipe.w : 0;
+      old.el.getBoundingClientRect(); // start from where it is, then let it go
+      pageParts(old.el).forEach(function (el) {
+        el.style.transition = swipe ? SLIDE : 'transform 0.16s ease-in, opacity 0.16s ease-in';
+        el.style.transform = 'translate3d(' + (swipe ? -dir * w : -dir * 28) + 'px, 0, 0)';
+        el.style.opacity = swipe ? String(1 - fadeBy()) : '0';
+      });
+      setTimeout(function () { old.el.remove(); if (ui.stale) softRender(); }, 320);
+    }
     if (prefs.signedIn) refresh().catch(function () { /* keep what we have */ });
+  }
+  /* Lifts the page on screen out of its frame so it can slide away over the new one. It keeps
+   * its exact layout by sitting in a copy of the frame, and its lists stay scrolled where they were. */
+  function leaving() {
+    var scr = liveScreen(), nav = scr && scr.querySelector(':scope > .tabs'), bar = scr && scr.querySelector(':scope > .bar');
+    if (!nav || !bar) return null;
+    var el = scr.cloneNode(false), parts = pageParts(scr);
+    var scrolled = [];
+    parts.forEach(function (part) {
+      [part].concat($$('.scroll', part)).forEach(function (x) { if (x.scrollTop) scrolled.push([x, x.scrollTop]); });
+    });
+    el.className = 'screen peek ghost';
+    el.removeAttribute('style');
+    el.setAttribute('aria-hidden', 'true');
+    el.inert = true;
+    el.appendChild(bar.cloneNode(false)); // empty stand-ins: they only hold the page's place
+    parts.forEach(function (part) { el.appendChild(part); });
+    var foot = nav.cloneNode(false);
+    foot.style.height = nav.offsetHeight + 'px';
+    el.appendChild(foot);
+    return { el: el, restore: function () { scrolled.forEach(function (x) { x[0].scrollTop = x[1]; }); } };
   }
   function openSheet(sheet) { ui.sheet = sheet; ui.sheetIn = true; render(); }
   /* The sheet slides away over the screen it came from, which has already been redrawn. */
@@ -1718,19 +1784,66 @@
    * the next tab slides in; otherwise it settles back. Only sideways drags count: a drag that
    * starts out vertical is left to the list underneath, for the whole of that touch.
    */
-  var drag = null, settle = 0;
-  function dragParts() { return $$('.screen > .body, .screen > .dock'); }
-  function setDrag(dx, animate) {
-    var w = (drag && drag.w) || window.innerWidth;
-    dragParts().forEach(function (el) {
-      el.style.transition = animate ? 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s' : 'none';
-      el.style.transform = dx ? 'translate3d(' + dx.toFixed(1) + 'px, 0, 0)' : '';
-      el.style.opacity = dx ? String(Math.max(0.35, 1 - Math.abs(dx) / w)) : '';
+  var drag = null, settle = 0, peeks = {};
+  var SLIDE = 'transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.24s';
+  function liveScreen() { return $('#app > .screen:not(.peek)'); }
+  function pageParts(scr) {
+    return scr ? Array.prototype.filter.call(scr.children, function (el) { return el.classList.contains('body') || el.classList.contains('dock'); }) : [];
+  }
+  function pageWidth() { var scr = liveScreen(); return (scr && scr.offsetWidth) || window.innerWidth; }
+  /* On a phone the pages fill the screen and stay solid. On a wide screen the column sits in the
+   * middle of the table, so a page fades out as it leaves the column instead of sliding across it. */
+  function fadeBy() { return $('#app').offsetWidth > pageWidth() + 60 ? 1 : 0.25; }
+  function place(scr, x, w, animate) {
+    var fade = fadeBy();
+    pageParts(scr).forEach(function (el) {
+      el.style.transition = animate ? SLIDE : 'none';
+      el.style.transform = x ? 'translate3d(' + x.toFixed(1) + 'px, 0, 0)' : '';
+      el.style.opacity = x ? String(Math.max(0, 1 - fade * Math.min(1, Math.abs(x) / w))) : '';
     });
+  }
+  /* The tab next door, drawn off to one side so it can be pulled into view. */
+  function peek(dir) {
+    var tab = TABS[TABS.indexOf(ui.screen) + dir];
+    if (!tab) return null;
+    if (peeks[dir] && peeks[dir].isConnected) return peeks[dir];
+    var here = ui.screen, anim = ui.anim, tmp = document.createElement('div');
+    ui.screen = tab;
+    ui.anim = '';
+    try { tmp.innerHTML = screens[tab](); } finally { ui.screen = here; ui.anim = anim; }
+    var el = tmp.firstElementChild;
+    el.classList.add('peek');
+    el.setAttribute('aria-hidden', 'true');
+    el.inert = true;
+    $$('[id]', el).forEach(function (x) { x.removeAttribute('id'); }); // the real page owns the ids
+    $('#app').appendChild(el);
+    return (peeks[dir] = el);
+  }
+  function dropPeeks() {
+    [1, -1].forEach(function (dir) { if (peeks[dir]) peeks[dir].remove(); });
+    peeks = {};
+  }
+  function holdLens(at) {
+    var glass = $('#app > .screen:not(.peek) > .tabs .lens');
+    if (!glass) return;
+    if (at == null) { glass.classList.remove('held'); glass.style.setProperty('--i', TABS.indexOf(ui.screen)); return; }
+    glass.classList.add('held');
+    glass.style.setProperty('--i', Math.max(0, Math.min(TABS.length - 1, at)).toFixed(3));
+  }
+  function setDrag(dx, animate) {
+    var w = (drag && drag.w) || pageWidth(), scr = liveScreen();
+    place(scr, dx, w, animate);
+    [1, -1].forEach(function (dir) {
+      var el = (dx * dir < 0 || peeks[dir]) && peek(dir); // only draw a neighbour once it is being pulled in
+      if (el) place(el, dx + dir * w, w, animate);
+    });
+    if (animate) holdLens(null); else holdLens(TABS.indexOf(ui.screen) - dx / w);
   }
   function clearDrag() {
     clearTimeout(settle);
-    dragParts().forEach(function (el) { el.style.transition = el.style.transform = el.style.opacity = ''; });
+    pageParts(liveScreen()).forEach(function (el) { el.style.transition = el.style.transform = el.style.opacity = ''; });
+    dropPeeks();
+    holdLens(null);
     ui.dragging = false;
   }
   function endDrag(commit) {
@@ -1741,8 +1854,10 @@
     var fast = Math.abs(d.dx) > 36 && Math.abs(d.dx) / Math.max(1, Date.now() - d.t) > 0.45;
     if (commit && at >= 0 && to >= 0 && to < TABS.length && (Math.abs(d.dx) > d.w * 0.3 || fast)) {
       lastSwipe = Date.now();
-      clearDrag();
-      return goTab(TABS[to]);
+      clearTimeout(settle);
+      dropPeeks(); // the real page takes over from exactly where its preview was
+      ui.dragging = false;
+      return goTab(TABS[to], { dx: d.dx, w: d.w });
     }
     if (Math.abs(d.dx) > 6) lastSwipe = Date.now();
     setDrag(0, true); // settle back where it was
@@ -1750,7 +1865,7 @@
     settle = setTimeout(function () {
       clearDrag();
       if (ui.stale) softRender();
-    }, 220);
+    }, 260);
   }
   document.addEventListener('touchstart', function (e) {
     if (drag) { drag = null; clearDrag(); } // a second finger: forget the whole thing
@@ -1760,7 +1875,7 @@
     if (focused && /^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName)) return; // the keyboard is up
     if (t.clientX < 22 || t.clientX > window.innerWidth - 22) return; // the screen's edges belong to the phone's own gestures
     clearDrag();
-    drag = { id: t.identifier, x: t.clientX, y: t.clientY, t: Date.now(), dx: 0, lock: null, w: window.innerWidth };
+    drag = { id: t.identifier, x: t.clientX, y: t.clientY, t: Date.now(), dx: 0, lock: null, w: pageWidth() };
   }, { passive: true });
   document.addEventListener('touchmove', function (e) {
     if (!drag) return;
@@ -1773,8 +1888,9 @@
       if (Math.abs(dx) < Math.abs(dy) * 1.3) { drag = null; return; } // up and down: not ours
       drag.lock = 'x';
       ui.dragging = true;
-      var screen = $('.screen');
-      if (screen) screen.classList.remove('fwd', 'back', 'fade'); // stop any entrance animation fighting the finger
+      var screen = liveScreen();
+      if (screen) screen.classList.remove('fwd', 'back', 'fade', 'swipe'); // stop any entrance animation fighting the finger
+      $$('#app > .ghost').forEach(function (el) { el.remove(); }); // and any page still on its way out
     }
     var at = TABS.indexOf(ui.screen);
     var wall = (dx > 0 && at === 0) || (dx < 0 && at === TABS.length - 1);
