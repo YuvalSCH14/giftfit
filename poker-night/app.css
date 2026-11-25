@@ -534,7 +534,7 @@ button.row:active { background: var(--card-inset); }
 .choice-text small { font-size: 14.5px; color: var(--ink-2); }
 .choice-chips { display: flex; flex: none; }
 .choice-chips .chip + .chip { margin-left: -7px; }
-.choice.saved { box-shadow: 0 0 0 2px var(--on-felt), 0 14px 30px -14px rgba(0, 0, 0, 0.65); }
+.choice.current { box-shadow: 0 0 0 3px var(--felt), 0 0 0 5px var(--on-felt), 0 14px 30px -14px rgba(0, 0, 0, 0.65); }
 .choice.quiet { min-height: 64px; background: none; color: var(--on-felt); box-shadow: inset 0 0 0 1.5px var(--on-felt-line); }
 .choice.quiet .choice-text b { font-size: 18px; }
 .choice.quiet .choice-text small { color: var(--on-felt-2); }

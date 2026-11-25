@@ -150,7 +150,7 @@
   function defaults() {
     return {
       v: 2, signedIn: false, currency: localCurrency(), chips: presetChips(300), buyIn: '20', reserve: 2, style: 'classic',
-      display: 'cash', pick: 0, showWorth: false, boxOk: false, custom: false, boxAt: 0, boxDirty: false, tipDismissed: false, friendIds: [], count: 6,
+      display: 'cash', pick: 0, showWorth: false, boxOk: false, mine: null, set: '', boxAt: 0, boxDirty: false, tipDismissed: false, friendIds: [], count: 6,
       name: rollName(), pending: null,
     };
   }
@@ -179,15 +179,21 @@
     s.friendIds = Array.isArray(s.friendIds) ? s.friendIds.filter(function (x) { return typeof x === 'string'; }) : [];
     s.count = Math.max(2, Math.min(MAX_PLAYERS, parseInt(s.count, 10) || 6));
     delete s.guests; // from before the player count became one number
-    s.signedIn = !!s.signedIn; s.showWorth = !!s.showWorth; s.boxOk = !!s.boxOk; s.tipDismissed = !!s.tipDismissed;
-    if (typeof saved.custom !== 'boolean') { // from before sets could be saved: anything that isn't a standard case is their own
-      var standard = Object.keys(PRESETS).some(function (key) {
+    s.signedIn = !!s.signedIn; s.showWorth = !!s.showWorth; s.tipDismissed = !!s.tipDismissed;
+    if (typeof saved.set !== 'string') { // from before the chip set was picked for every game
+      var standard = Object.keys(PRESETS).filter(function (key) {
         return PRESETS[key].length === s.chips.length && PRESETS[key].every(function (row, i) { return s.chips[i].name === row[0] && s.chips[i].count === String(row[1]) && !s.chips[i].lock; });
-      });
-      s.custom = s.boxOk && !standard;
-      s.boxDirty = s.boxOk;
+      })[0] || '';
+      s.set = s.boxOk ? standard || 'mine' : '';
+      if (s.set === 'mine') { // anything that isn't a standard case was their own
+        s.mine = { numbers: s.showWorth || s.chips.some(function (c) { return c.lock.trim(); }), chips: s.chips.map(function (c) { return { name: c.name, color: c.color, count: c.count, lock: c.lock }; }) };
+        s.boxDirty = true;
+      }
     }
-    s.custom = !!s.custom; s.boxDirty = !!s.boxDirty; s.boxAt = Number(s.boxAt) || 0;
+    if (!s.mine || typeof s.mine !== 'object' || !Array.isArray(s.mine.chips) || !s.mine.chips.length) s.mine = null;
+    if (['mine', '300', '500'].indexOf(s.set) < 0 || (s.set === 'mine' && !s.mine)) s.set = '';
+    s.boxDirty = !!s.boxDirty; s.boxAt = Number(s.boxAt) || 0;
+    delete s.custom; delete s.boxOk;
     if (!s.pending || typeof s.pending !== 'object') s.pending = null;
     return s;
   }
@@ -256,13 +262,24 @@
     if (!on) { try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* nothing to clear */ } }
     savePrefs();
   }
-  /* ── The chip set, kept with the account ───
-   * It lives on this phone either way. Signed in, it is also saved to the account, so a new or
-   * reinstalled phone gets it back. Whichever side changed last wins.
+  /* ── Your own chip set ───────────────────────
+   * prefs.chips is the set in play. prefs.mine is the set this person owns and saved, which
+   * stays put when a standard case is picked for one night. Signed in, it is also kept with the
+   * account, so a new or reinstalled phone gets it back; whichever side changed last wins.
    */
+  function useMine() {
+    prefs.chips = prefs.mine.chips.map(function (c) {
+      return { id: rid(7), name: String(c.name || ''), color: validHex(c.color), count: String(c.count == null ? '' : c.count), lock: String(c.lock || '') };
+    });
+    prefs.showWorth = !!prefs.mine.numbers;
+    prefs.set = 'mine';
+    prefs.pick = 0;
+  }
   var boxBefore = null;
+  /* The editor works on the set in play, so remember what that was in case they back out. */
   function openEditor() {
-    boxBefore = JSON.stringify({ chips: prefs.chips, showWorth: prefs.showWorth });
+    boxBefore = JSON.stringify({ chips: prefs.chips, showWorth: prefs.showWorth, set: prefs.set });
+    if (prefs.mine) useMine(); // changing your set starts from your set
     ui.boxCustom = true;
   }
   function leaveEditor(keep) {
@@ -270,20 +287,18 @@
       var was = JSON.parse(boxBefore);
       prefs.chips = was.chips;
       prefs.showWorth = was.showWorth;
+      prefs.set = was.set;
       prefs.pick = 0;
       savePrefs();
     }
     boxBefore = null;
     ui.boxCustom = false;
   }
-  function saveBox() {
-    prefs.boxOk = true;
-    prefs.boxDirty = true; // not on the account yet
-    savePrefs();
-    if (!prefs.signedIn) return;
+  function pushBox() {
+    if (!prefs.signedIn || !prefs.mine) return;
     call('POST', 'box', {
-      numbers: numbersOn(), custom: prefs.custom,
-      chips: prefs.chips.map(function (c) { return { name: c.name, color: c.color, count: c.count, number: c.lock }; }),
+      numbers: !!prefs.mine.numbers, custom: true,
+      chips: prefs.mine.chips.map(function (c) { return { name: c.name, color: c.color, count: c.count, number: c.lock }; }),
     }).then(function (r) {
       prefs.boxAt = r.box.at;
       prefs.boxDirty = false;
@@ -291,20 +306,24 @@
       savePrefs();
     }, function () { /* still on this phone; sent again on the next refresh */ });
   }
+  /* Save: the set in play becomes this person's own. */
+  function saveBox() {
+    prefs.mine = { numbers: numbersOn(), chips: prefs.chips.map(function (c) { return { name: c.name, color: c.color, count: c.count, lock: c.lock }; }) };
+    prefs.set = 'mine';
+    prefs.boxDirty = true; // not on the account yet
+    savePrefs();
+    pushBox();
+  }
   function syncBox() {
-    if (!prefs.signedIn || ui.screen === 'box') return; // never swap the set under someone editing it
-    var theirs = data.box;
-    if (prefs.boxDirty && prefs.boxOk) return saveBox();
-    if (!theirs) { if (prefs.boxOk) saveBox(); return; }
-    if (theirs.at <= (prefs.boxAt || 0) || !Array.isArray(theirs.chips) || !theirs.chips.length) return;
-    prefs.chips = theirs.chips.map(function (c) {
-      return { id: rid(7), name: String(c.name || ''), color: validHex(c.color), count: String(c.count || ''), lock: String(c.number || '') };
-    });
-    prefs.showWorth = !!theirs.numbers;
-    prefs.custom = !!theirs.custom;
-    prefs.boxOk = true;
+    if (!prefs.signedIn || ui.boxCustom) return; // never swap the set under someone editing it
+    var theirs = data.box && data.box.custom !== false && Array.isArray(data.box.chips) && data.box.chips.length ? data.box : null;
+    if (prefs.boxDirty && prefs.mine) return pushBox();
+    if (!theirs) { if (prefs.mine) pushBox(); return; }
+    if (theirs.at <= (prefs.boxAt || 0)) return;
+    var inPlay = prefs.set === 'mine' || !prefs.set;
+    prefs.mine = { numbers: !!theirs.numbers, chips: theirs.chips.map(function (c) { return { name: String(c.name || ''), color: validHex(c.color), count: String(c.count || ''), lock: String(c.number || '') }; }) };
     prefs.boxAt = theirs.at;
-    prefs.pick = 0;
+    if (inPlay) useMine();
     savePrefs();
   }
   function refresh() {
@@ -390,8 +409,8 @@
     if (prefs.pick >= solved.options.length) prefs.pick = 0;
   }
   function option() { return solved.options[prefs.pick] || solved.options[0] || null; }
-  /* The chip set is asked for once; after that it only shows up when someone asks to change it. */
-  function steps() { return prefs.boxOk && !ui.boxEdit ? ['players', 'buyin', 'split'] : ['players', 'buyin', 'box', 'split']; }
+  /* Every new game starts by picking the chips on the table tonight. */
+  function steps() { return ['box', 'players', 'buyin', 'split']; }
   function dots() {
     var list = steps(), at = list.indexOf(ui.screen);
     return '<div class="dots" role="img" aria-label="Step ' + (at + 1) + ' of ' + list.length + '">' +
@@ -607,19 +626,20 @@
 
     box: function () {
       if (!ui.boxCustom) {
+        var last = function (key) { return prefs.set === key ? ' · last used' : ''; };
         var set = function (key, title, sub) {
           var chips = PRESETS[key].map(function (row) { return '<span class="chip sm" style="' + chipStyle(presetColour(row[0])) + '"></span>'; }).join('');
-          return '<button class="choice" data-act="pick-set" data-set="' + key + '"><span class="choice-text"><b>' + title + '</b><small>' + sub + '</small></span><span class="choice-chips">' + chips + '</span></button>';
+          return '<button class="choice' + (prefs.set === key ? ' current' : '') + '" data-act="pick-set" data-set="' + key + '"><span class="choice-text"><b>' + title + '</b><small>' + sub + last(key) + '</small></span><span class="choice-chips">' + chips + '</span></button>';
         };
         var mine = '';
-        if (prefs.custom && prefs.boxOk) {
-          var total = prefs.chips.reduce(function (a, c) { return a + chipCount(c); }, 0);
-          mine = '<button class="choice saved" data-act="use-saved"><span class="choice-text"><b>Your chip set</b><small>' + fmtNumber(total, 0) + ' chips' + (numbersOn() ? ' · with numbers' : '') + ' · saved</small></span>' +
-            '<span class="choice-chips">' + prefs.chips.slice(0, 6).map(function (c) { return '<span class="chip sm" style="' + chipStyle(c.color) + '"></span>'; }).join('') + '</span></button>';
+        if (prefs.mine) {
+          var total = prefs.mine.chips.reduce(function (a, c) { return a + (/^\d+$/.test(String(c.count).trim()) ? parseInt(c.count, 10) : 0); }, 0);
+          mine = '<button class="choice' + (prefs.set === 'mine' ? ' current' : '') + '" data-act="use-saved"><span class="choice-text"><b>Your chip set</b><small>' + fmtNumber(total, 0) + ' chips' + (prefs.mine.numbers ? ' · with numbers' : '') + last('mine') + '</small></span>' +
+            '<span class="choice-chips">' + prefs.mine.chips.slice(0, 6).map(function (c) { return '<span class="chip sm" style="' + chipStyle(c.color) + '"></span>'; }).join('') + '</span></button>';
         }
         return frame({
           back: true, dots: dots(),
-          body: '<h1>Which chip set do you have?</h1><p class="lede">' + (mine ? 'Your own set is saved. Tap it to use it.' : 'You only pick this once.') + '</p><div class="grow"></div><div class="choices">' + mine +
+          body: '<h1>Which chips tonight?</h1><p class="lede">Tap the set you’re playing with.</p><div class="grow"></div><div class="choices">' + mine +
             set('300', '300 chips', 'The usual case') + set('500', '500 chips', 'The big case') +
             '<button class="choice quiet" data-act="custom-set"><span class="choice-text"><b>' + (mine ? 'Change your set' : 'Something else') + '</b><small>' + (mine ? 'Colours, counts or numbers' : 'Tell the app what’s in it') + '</small></span><span class="choice-go">' + ICON.back + '</span></button>' +
             '</div><div class="grow two"></div>',
@@ -1165,6 +1185,12 @@
 
   /* ── Things people can do ────────────────── */
   function changed() { prefs.pick = 0; savePrefs(); render(); }
+  /* With the chips chosen: on to the players, or back to the split if that is where they came from. */
+  function afterBox() {
+    var back = ui.boxEdit;
+    ui.boxEdit = false;
+    go(back ? 'split' : 'players', back ? 'back' : 'fwd');
+  }
   /* Back at the table with no sheet in the way, for the things that happen on the felt. */
   function showTable() {
     ui.sheet = null;
@@ -1315,7 +1341,7 @@
     back: function () {
       var s = ui.screen, list = steps(), at = list.indexOf(s);
       if (s === 'box' && ui.boxCustom) { leaveEditor(false); ui.anim = 'back'; return render(); } // back without saving: as it was
-      if (s === 'box' && ui.boxEdit && prefs.boxOk) { ui.boxEdit = false; return go('split', 'back'); }
+      if (s === 'box' && ui.boxEdit) { ui.boxEdit = false; return go('split', 'back'); } // came from the split's options
       if (at > 0) return go(list[at - 1], 'back');
       if (at === 0) { ui.boxEdit = false; leaveEditor(false); }
       if (s === 'count') return go(ui.cameFrom === 'settle' ? 'settle' : 'table', 'back');
@@ -1330,11 +1356,9 @@
           if (blank) blank.focus();
           return toast('Type the number on every colour');
         }
-        prefs.custom = true;
-        ui.boxEdit = false;
         leaveEditor(true);
         saveBox();
-        go('split');
+        afterBox();
         return toast(prefs.signedIn ? 'Chip set saved to your account' : 'Chip set saved on this phone');
       }
       var list = steps(), at = list.indexOf(ui.screen);
@@ -1364,7 +1388,7 @@
     },
     'login-instead': function () { ui.seg.account = 'login'; go('account'); },
 
-    'new-game': function () { ui.boxEdit = false; leaveEditor(false); go('players'); },
+    'new-game': function () { ui.boxEdit = false; leaveEditor(false); go('box'); },
     'players-step': function (el) {
       var least = Math.max(2, 1 + selFriends().length);
       prefs.count = Math.max(least, Math.min(MAX_PLAYERS, playerCount() + Number(el.dataset.by)));
@@ -1383,23 +1407,17 @@
     'quick-buy': function (el) { prefs.buyIn = el.dataset.buy; changed(); },
     pace: function (el) { prefs.style = el.dataset.style; changed(); },
     'pick-set': function (el) {
-      var key = el.dataset.set;
-      var use = function () {
-        prefs.chips = presetChips(key); // plain chips, no numbers
-        prefs.showWorth = false;
-        prefs.custom = false;
-        prefs.pick = 0;
-        ui.boxEdit = false;
-        saveBox();
-        go('split');
-      };
-      if (prefs.custom && prefs.boxOk) return ask('Switch to the ' + key + '-chip set?', 'It replaces your own saved chip set.', 'Switch', use);
-      use();
+      prefs.chips = presetChips(el.dataset.set); // plain chips, no numbers; your own set stays saved
+      prefs.showWorth = false;
+      prefs.set = el.dataset.set;
+      prefs.pick = 0;
+      savePrefs();
+      afterBox();
     },
-    'use-saved': function () { ui.boxEdit = false; go('split'); },
+    'use-saved': function () { useMine(); savePrefs(); afterBox(); },
     /* Start the editor again from a clean, plain set. Nothing saved changes until Save is pressed. */
     'reset-box': function () {
-      ask('Start this chip set again?', 'Colours, counts and numbers go back to a plain 300-chip set. Nothing is saved until you tap Save.', 'Reset', function () {
+      ask('Start this chip set again?', 'Colours, counts and numbers go back to a plain 300-chip set. Your saved set only changes when you tap Save.', 'Reset', function () {
         prefs.chips = presetChips('300');
         prefs.showWorth = false;
         prefs.pick = 0;
@@ -1439,7 +1457,7 @@
     'edit-box': function (el) {
       ui.boxEdit = true;
       ui.boxCustom = false;
-      if ((el && el.dataset.custom) || (numbersOn() && !prefs.custom)) openEditor(); // something needs fixing: straight to the rows
+      if (el && el.dataset.custom) openEditor(); // something needs fixing: straight to the rows
       go('box', 'fwd');
     },
     'start-game': startGame,
