@@ -3,11 +3,12 @@
  * that copy straight away and refreshed in the background, so a new version shows up on the next open.
  * Bump VERSION when a file is added or removed.
  */
-var VERSION = 'poker-night-v1';
+var VERSION = 'poker-night-v2';
 var SHELL = [
   './',
   'app.css',
   'solver.js',
+  'core.js',
   'app.js',
   'manifest.webmanifest',
   'icons/icon.svg',
@@ -36,7 +37,9 @@ self.addEventListener('activate', function (event) {
 
 self.addEventListener('fetch', function (event) {
   var req = event.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  var url = new URL(req.url);
+  // Only the app's own files are kept. Anything from /api is live data and always goes to the network.
+  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.indexOf('/api/') >= 0) return;
   event.respondWith(
     caches.open(VERSION).then(function (cache) {
       return cache.match(req, { ignoreSearch: true }).then(function (hit) {
