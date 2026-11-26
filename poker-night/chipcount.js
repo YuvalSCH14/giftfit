@@ -171,11 +171,13 @@
 
   /* The colour of each row across the middle of a stack. The middle value, not the average, so
    * the little inlaid marks on a chip's edge don't tint the row. */
-  function rowColours(px, W, H, x0, x1, lean) {
-    var w = x1 - x0 + 1, from = Math.round(x0 + w * 0.25), to = Math.round(x1 - w * 0.25), mid = (x0 + x1) / 2;
+  function rowColours(px, W, H, x0, x1, lean, fa, fb) {
+    var w = x1 - x0 + 1, from = Math.round(x0 + w * (fa == null ? 0.25 : fa)), to = Math.round(x0 + w * (fb == null ? 0.75 : fb)), mid = (x0 + x1) / 2;
+    from = Math.max(0, from); to = Math.min(W - 1, to);
     var step = Math.max(1, Math.floor((to - from + 1) / 25)), cols = [], shift = [], x, y, c;
     for (x = from; x <= to; x += step) { cols.push(x); shift.push(Math.round((x - mid) * (lean || 0))); }
     var M = new Float32Array(H * 3), buf = [new Float32Array(cols.length), new Float32Array(cols.length), new Float32Array(cols.length)];
+    if (!cols.length) return M;
     for (y = 0; y < H; y++) {
       for (x = 0; x < cols.length; x++) {
         var i = 4 * (Math.max(0, Math.min(H - 1, y + shift[x])) * W + cols[x]);
@@ -227,46 +229,150 @@
     return null;
   }
 
-  /* 3. From the table upwards, one chip at a time. */
-  function climb(G, pitch) {
+  /* The clear lines in a strip: where they are, to a fraction of a row, and how strong. */
+  function peaksOf(G, pitch) {
     var H = G.length, floor = Math.max(12, 4 * median(G)), peaks = [], y;
     for (y = 2; y < H - 2; y++) {
       if (G[y] >= floor && G[y] >= G[y - 1] && G[y] > G[y + 1]) {
+        var bend = G[y - 1] - 2 * G[y] + G[y + 1], at = y + (bend ? 0.5 * (G[y - 1] - G[y + 1]) / bend : 0);
         var last = peaks[peaks.length - 1];
-        if (last && y - last.y < pitch * 0.3) { if (G[y] > last.g) { last.y = y; last.g = G[y]; } } else peaks.push({ y: y, g: G[y] });
+        if (last && at - last.y < pitch * 0.3) { if (G[y] > last.g) { last.y = at; last.g = G[y]; } } else peaks.push({ y: at, g: G[y] });
       }
     }
+    return peaks;
+  }
+  /* The strongest line in a strip close to a given row, or null. */
+  function lineNear(G, y, reach, least) {
+    var best = -1, from = Math.max(2, Math.round(y - reach)), to = Math.min(G.length - 3, Math.round(y + reach));
+    for (var i = from; i <= to; i++) if (G[i] >= least && G[i] >= G[i - 1] && G[i] >= G[i + 1] && (best < 0 || G[i] > G[best])) best = i;
+    if (best < 0) return null;
+    var bend = G[best - 1] - 2 * G[best] + G[best + 1];
+    return { y: best + (bend ? 0.5 * (G[best - 1] - G[best + 1]) / bend : 0), g: G[best] };
+  }
+
+  /* 3. Where a stack is, top to bottom. s has the line strengths across its middle (G), in a
+   * narrow strip either side (GL, GR) and just outside it (OL, OR; null where a neighbour is).
+   * near is a row the foot of the stack should be close to, once the other stacks have said
+   * where the table is. */
+  function extent(s, pitch, near) {
+    var peaks = peaksOf(s.G, pitch), y;
     if (peaks.length < 2) return null;
-    // The stack is the longest unbroken run of lines; a stray mark on the felt is not part of it.
+    // A stack is an unbroken run of lines; a stray mark on the felt, or the things behind it, are not part of it.
     var chains = [[peaks[0]]];
     for (y = 1; y < peaks.length; y++) {
       if (peaks[y].y - peaks[y - 1].y <= 2.4 * pitch) chains[chains.length - 1].push(peaks[y]); else chains.push([peaks[y]]);
     }
-    var chain = chains.sort(function (a, b) { return (b[b.length - 1].y - b[0].y) - (a[a.length - 1].y - a[0].y); })[0];
-    // Where does the stack really start and stop? A soft shadow on the felt under it, or a glint
-    // above it, also makes a line. A real end is a clear line, one chip away from the next one.
-    var near = function (y) { return chain.some(function (k) { return Math.abs(k.y - y) <= 0.3 * pitch; }); };
+    chains = chains.filter(function (c) { return c[c.length - 1].y - c[0].y >= 0.7 * pitch; });
+    if (!chains.length) return null;
+    var span = function (c) { return c[c.length - 1].y - c[0].y; };
+    var chain = chains.slice().sort(function (a, b) {
+      return near == null ? span(b) - span(a) : Math.abs(a[a.length - 1].y - near) - Math.abs(b[b.length - 1].y - near);
+    })[0].slice();
+    // The foot is a clear line, one chip below the next one. A soft shadow on the felt is neither.
+    var close = function (yy) { return chain.some(function (k) { return Math.abs(k.y - yy) <= 0.3 * pitch; }); };
     var faint = 0.1 * median(chain.map(function (k) { return k.g; }));
-    var isEnd = function (k, dir) { return k.g >= faint && near(k.y + dir * pitch); };
-    while (chain.length > 2 && !isEnd(chain[chain.length - 1], -1)) chain.pop();
-    while (chain.length > 2 && !isEnd(chain[0], 1) && !isEnd(chain[1], 1)) chain.shift(); // the top chip's face may sit above its rim
-    var top = chain[0].y, bottom = chain[chain.length - 1].y;
-    if (bottom - top < 0.7 * pitch) return null;
-
-    var bounds = [bottom], cur = bottom, p = pitch, guessed = 0;
+    while (chain.length > 2 && !(chain[chain.length - 1].g >= faint && close(chain[chain.length - 1].y - pitch))) chain.pop();
+    while (chain.length > 2 && chain[0].g < faint) chain.shift();
+    return { chain: chain, top: chain[0].y, bottom: chain[chain.length - 1].y };
+  }
+  /* The top face. From a little above, the top of a stack is an ellipse: the top edge in the
+   * photo is its far side, and it bows, highest in the middle and falling away to each side by
+   * half the ellipse's height. Follow that edge across the stack and the bow gives the height of
+   * the face, which is how far below the top edge the rim of the top chip is.
+   * An edge that carries on past the side of the stack is not the stack's at all: it belongs to
+   * the room behind, the edge of the table, a phone, a card.
+   * Returns { face: rows, seen: share of the width the edge was followed over, beyond: how far
+   * past the stack it went, as a share of the width }. limitL and limitR are where the
+   * neighbouring stacks start. */
+  function topFace(px, W, H, s, top, pitch, limitL, limitR) {
+    var yt = Math.round(top), cx = (s.x0 + s.x1) / 2, half = s.w / 2, r = Math.max(2, Math.round(pitch * 0.3));
+    var colour = function (x, ya, yb) { // the average colour of a short column
+      var sum = [0, 0, 0], n = 0;
+      for (var y = Math.max(0, ya); y <= Math.min(H - 1, yb); y++) { var i = 4 * (y * W + x); sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; n++; }
+      return n ? [sum[0] / n, sum[1] / n, sum[2] / n] : [0, 0, 0];
+    };
+    // what the edge looks like in the middle: the colour just below it minus the colour just above
+    var mx = Math.round(cx), below = colour(mx, yt + 1, yt + r), above = colour(mx, yt - r, yt - 1);
+    var want = [below[0] - above[0], below[1] - above[1], below[2] - above[2]], size = Math.sqrt(want[0] * want[0] + want[1] * want[1] + want[2] * want[2]);
+    if (size < 12) return { face: 0, seen: 0, beyond: 0, clear: size, spread: 9 };
+    var edgeAt = function (x, guess, reach) { // the row in this column that looks most like that edge
+      var best = null, score = 0.35 * size;
+      for (var y = Math.round(guess - reach); y <= Math.round(guess + reach); y++) {
+        var b = colour(x, y + 1, y + r), a = colour(x, y - r, y - 1);
+        var sc = ((b[0] - a[0]) * want[0] + (b[1] - a[1]) * want[1] + (b[2] - a[2]) * want[2]) / size;
+        if (sc > score) { score = sc; best = y; }
+      }
+      return best;
+    };
+    var step = Math.max(1, Math.round(s.w / 60)), pts = [{ x: mx, y: yt }], reach = Math.max(2, step * 1.2);
+    [-1, 1].forEach(function (dir) {
+      var y = yt, missed = 0;
+      for (var x = mx + dir * step; x >= Math.max(0, limitL, s.x0 - 0.35 * s.w) && x <= Math.min(W - 1, limitR, s.x1 + 0.35 * s.w); x += dir * step) {
+        var hit = edgeAt(x, y, reach);
+        if (hit == null) { if (++missed > 2) break; continue; }
+        missed = 0; y = hit;
+        pts.push({ x: x, y: hit });
+      }
+    });
+    var xs = pts.map(function (q) { return q.x; }), lo = Math.min.apply(null, xs), hi = Math.max.apply(null, xs);
+    var seen = (Math.min(hi, s.x1) - Math.max(lo, s.x0)) / s.w, beyond = Math.max(s.x0 - lo, hi - s.x1, 0) / s.w;
+    if (seen < 0.6) return { face: 0, seen: seen, beyond: beyond, clear: size, spread: 9 };
+    pts = pts.filter(function (q) { return q.x >= s.x0 && q.x <= s.x1; });
+    // On an ellipse the edge has dropped by (face / 2) * (1 - sqrt(1 - u * u)) at u, where u runs
+    // from -1 to 1 across the stack. Every point away from the middle gives its own answer for the
+    // face; take the middle one, and say how well they agree. Left and right are paired up first,
+    // so that a photo that is not quite level cancels out.
+    var drop = {}, answers = [];
+    pts.forEach(function (q) { var u = (q.x - cx) / half, key = Math.round(Math.abs(u) * 40); if (Math.abs(u) >= 0.4 && Math.abs(u) <= 0.88) (drop[key] = drop[key] || { u: Math.abs(u), l: [], r: [] })[u < 0 ? 'l' : 'r'].push(q.y - yt); });
+    Object.keys(drop).forEach(function (key) {
+      var d = drop[key];
+      if (!d.l.length || !d.r.length) return;
+      answers.push((median(d.l) + median(d.r)) / (1 - Math.sqrt(1 - d.u * d.u)));
+    });
+    if (answers.length < 4) return { face: 0, seen: seen, beyond: beyond, clear: size, spread: 9 };
+    var face = Math.max(0, median(answers)), high = percentile(answers, 0.8);
+    var spread = (high - percentile(answers, 0.2)) / Math.max(pitch, face); // how far the answers disagree, in chips
+    return { face: face, seen: seen, beyond: beyond, clear: size, spread: spread };
+  }
+  /* Is the camera above this part of the stack? Then the front edges of the chips smile: at the
+   * left of the stack they slope down towards the middle, at the right they slope up away from
+   * it. Seen level they are flat, and from below they frown. Returns the smile, as a slope. */
+  function smile(px, W, H, s, ya, yb) {
+    var slopeOf = function (fa, fb) {
+      var from = Math.max(0, Math.round(s.x0 + s.w * fa)), to = Math.min(W - 1, Math.round(s.x0 + s.w * fb)), mid = (from + to) / 2, best = 0, top = -1, scores = [];
+      for (var k = -14; k <= 14; k++) {
+        var lean = k * 0.04, power = 0, prev = null, before = null;
+        for (var y = Math.max(2, Math.round(ya)); y <= Math.min(H - 3, Math.round(yb)); y++) {
+          var sum = 0, n = 0;
+          for (var x = from; x <= to; x += 2) { var yy = Math.max(0, Math.min(H - 1, y + Math.round((x - mid) * lean))), i = 4 * (yy * W + x); sum += px[i] + px[i + 1] + px[i + 2]; n++; }
+          var v = sum / n;
+          if (before != null) power += (v - before) * (v - before);
+          before = prev; prev = v;
+        }
+        scores.push(power);
+        if (power > top) { top = power; best = scores.length - 1; }
+      }
+      var fine = 0;
+      if (best > 0 && best < scores.length - 1) { var bend = scores[best - 1] - 2 * scores[best] + scores[best + 1]; if (bend) fine = 0.5 * (scores[best - 1] - scores[best + 1]) / bend; }
+      return (best - 14 + fine) * 0.04;
+    };
+    return (slopeOf(0.06, 0.2) - slopeOf(0.8, 0.94)) / 2;
+  }
+  /* From the table upwards, one chip at a time, as far as the rim of the top chip. */
+  function climb(ext, pitch, rim, face) {
+    var chain = ext.chain, bottom = ext.bottom, bounds = [bottom], cur = bottom, p = pitch, guessed = 0;
     for (var guard = 0; guard < 200; guard++) {
-      var left = cur - top;
-      if (left < 0.55 * p) break; // what remains is the face of the top chip, seen slightly from above
+      if (cur - rim < 0.55 * p) break; // what remains is the face of the top chip
       var want = cur - p, best = null, score = 0;
       chain.forEach(function (k) {
         var off = Math.abs(k.y - want);
-        if (k.y >= cur || off > 0.3 * p) return;
-        var s = k.g * (1 - 0.5 * off / (0.3 * p));
-        if (s > score) { score = s; best = k; }
+        if (k.y >= cur || off > 0.3 * p || k.y < rim - 0.35 * p) return;
+        var sc = k.g * (1 - 0.5 * off / (0.3 * p));
+        if (sc > score) { score = sc; best = k; }
       });
       var next;
       if (best) next = best.y;
-      else { next = Math.max(top, Math.round(want)); guessed++; } // a join too faint to see: where it must be
+      else { next = Math.max(rim, want); guessed++; } // a join too faint to see: where it must be
       p = Math.max(pitch * 0.85, Math.min(pitch * 1.15, 0.85 * p + 0.15 * (cur - next)));
       bounds.push(next);
       cur = next;
@@ -274,9 +380,11 @@
     bounds.reverse();
     var n = bounds.length - 1;
     if (n < 1) return null;
-    var each = (bounds[n] - bounds[0]) / n, even = true;
+    var each = (bounds[n] - bounds[0]) / n, even = true, over = (cur - rim) / each;
     for (var k = 0; k < n; k++) if (Math.abs(bounds[k + 1] - bounds[k] - each) > 0.3 * each) even = false;
-    return { bounds: bounds, top: top, bottom: bottom, each: each, sure: guessed === 0 && even };
+    // With the top face in view the rim has to land where the curve of the chips says it is.
+    var fits = face > 0.25 * each ? Math.abs(over) < 0.4 : over > -0.3 && over < 0.6;
+    return { bounds: bounds.map(Math.round), each: each, guessed: guessed, sure: guessed === 0 && even && fits };
   }
 
   /* 4. The colour of one chip: the middle of its band, away from the joins and the round edges. */
@@ -342,19 +450,121 @@
   /* One pass over a picture that is already level and a sensible size. */
   function analyse(img, colours) {
     var W = img.width, H = img.height, px = img.data, L = greyOf(img);
-    var found = findStacks(L, W, H).map(function (r) {
+    var strips = function (r) {
       var w = r[1] - r[0] + 1, view = sharpest(px, W, H, r[0], r[1]);
       return { x0: r[0], x1: r[1], w: w, G: view.G, lean: view.lean, first: pitchOf(view.G, w / 18, w / 4.5) };
+    };
+    var ranges = findStacks(L, W, H), Es = findStacks.lines, base = findStacks.base;
+    // Every chip is as wide as every other. A stack that came out narrow is a short one, whose few
+    // lines only cleared the bar in its middle: give it the width of the others, around the same middle.
+    var usualWidth = median(ranges.map(function (r) { return r[1] - r[0] + 1; }));
+    ranges = ranges.map(function (r, i) {
+      if (r[1] - r[0] + 1 >= 0.78 * usualWidth) return r;
+      var sum = 0, at = 0;
+      for (var x = r[0]; x <= r[1]; x++) { var e = Math.max(0, Es[x] - base); sum += e; at += e * x; }
+      var cx = sum ? at / sum : (r[0] + r[1]) / 2;
+      var lo = Math.max(i ? ranges[i - 1][1] + 3 : 0, Math.round(cx - usualWidth / 2)), hi = Math.min(i + 1 < ranges.length ? ranges[i + 1][0] - 3 : W - 1, Math.round(cx + usualWidth / 2));
+      return hi - lo >= r[1] - r[0] ? [lo, hi] : r;
     });
+    var found = ranges.map(strips);
     // Every chip on the table is the same thickness, so the stacks have to agree with each other.
     var clear = found.filter(function (s) { return s.first && s.first.strength > 0.15; });
     var usual = clear.length ? median(clear.map(function (s) { return s.first.pitch / s.w; })) : 0;
-    var stacks = [], all = [];
     found.forEach(function (s) {
       var guess = usual ? usual * s.w : s.first && s.first.pitch;
       if (!guess) return;
-      var fine = pitchOf(s.G, guess * 0.87, guess * 1.13), pitch = fine ? fine.pitch : guess;
-      var run = climb(s.G, pitch);
+      var fine = pitchOf(s.G, guess * 0.87, guess * 1.13);
+      s.pitch = fine ? fine.pitch : guess;
+    });
+    found = found.filter(function (s) { return s.pitch; });
+    if (found.length) {
+      var thick0 = median(found.map(function (s) { return s.pitch; }));
+      var seen = found.map(function (s) { return { x0: s.x0, x1: s.x1, chips: { length: Math.max(1, Math.round(H * 0.3 / thick0)) } }; });
+      shortStacks(Es, base, W, seen).forEach(function (r) { var s = strips(r); s.pitch = thick0 * s.w / median(found.map(function (f) { return f.w; })); s.short = true; found.push(s); });
+      found.sort(function (a, b) { return a.x0 - b.x0; });
+    }
+    var measured = found.map(function (s) { s.ext = extent(s, s.pitch, null); return s; }).filter(function (s) { return s.ext; });
+    // The stacks stand on one table, so their feet are in a line. A "stack" that ends well above or
+    // below it is the wrong run of lines: something behind the chips, usually. Look again near the line.
+    var footLine = function (list) {
+      var mid = function (s) { return (s.x0 + s.x1) / 2; }, slopes = [];
+      for (var a = 0; a < list.length; a++) for (var b = a + 1; b < list.length; b++) slopes.push((list[b].ext.bottom - list[a].ext.bottom) / (mid(list[b]) - mid(list[a])));
+      var slope = list.length > 2 ? Math.max(-0.06, Math.min(0.06, median(slopes))) : 0;
+      var level = median(list.map(function (s) { return s.ext.bottom - slope * mid(s); }));
+      return function (s) { return level + slope * mid(s); };
+    };
+    if (measured.length > 2) {
+      var foot = footLine(measured);
+      measured.forEach(function (s) { if (Math.abs(s.ext.bottom - foot(s)) > 1.2 * s.pitch) { var again = extent(s, s.pitch, foot(s)); if (again) s.ext = again; } });
+    }
+    // Is a band of the picture the stack, or the room showing behind it? The stack is a different
+    // colour from what is beside it on at least one side; the table behind a stack is not.
+    var patch = function (xa, xb, ya, yb) {
+      var sum = [0, 0, 0], n = 0;
+      for (var y = Math.max(0, Math.round(ya)); y <= Math.min(H - 1, Math.round(yb)); y++) for (var x = Math.max(0, Math.round(xa)); x <= Math.min(W - 1, Math.round(xb)); x += 2) {
+        var i = 4 * (y * W + x); sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; n++;
+      }
+      return n > 3 ? lab([sum[0] / n, sum[1] / n, sum[2] / n]) : null;
+    };
+    var beside = function (s, ya, yb) { // how far the room is clear of other stacks, each side, at these rows
+      var left = -1, right = W;
+      measured.forEach(function (o) {
+        if (o === s || o.ext.bottom + o.pitch < ya || o.ext.top - o.pitch > yb) return;
+        if (o.x1 < s.x0 + s.w / 2) left = Math.max(left, o.x1 + 2); else right = Math.min(right, o.x0 - 2);
+      });
+      return [left, right];
+    };
+    var likeRoom = function (s, ya, yb) {
+      var h = yb - ya, a = ya + 0.25 * h, b = yb - 0.25 * h, room = beside(s, ya, yb);
+      var inside = patch(s.x0 + 0.35 * s.w, s.x0 + 0.65 * s.w, a, b);
+      var outL = room[0] < s.x0 - 0.22 * s.w ? patch(s.x0 - 0.22 * s.w, s.x0 - 0.08 * s.w, a, b) : null;
+      var outR = room[1] > s.x1 + 0.22 * s.w ? patch(s.x1 + 0.08 * s.w, s.x1 + 0.22 * s.w, a, b) : null;
+      if (!inside || (!outL && !outR)) return false;
+      return [outL, outR].some(function (o) { return o && unlike(inside, o) < 9; });
+    };
+    // The foot of each stack. A band at the bottom that looks like the table may be the shadow under
+    // the stack, read as one more chip. The other stacks say where the table is.
+    measured.forEach(function (s) { var c = s.ext.chain, n = c.length; s.soft = n > 2 && likeRoom(s, c[n - 2].y, c[n - 1].y); });
+    var firm = measured.filter(function (s) { return !s.soft; });
+    if (firm.length) {
+      var table = firm.length > 2 ? footLine(firm) : (function (y) { return function () { return y; }; })(median(firm.map(function (s) { return s.ext.bottom; })));
+      measured.forEach(function (s) {
+        if (!s.soft) return;
+        var c = s.ext.chain, n = c.length;
+        if (Math.abs(c[n - 2].y - table(s)) < Math.abs(c[n - 1].y - table(s))) { c.pop(); s.ext.bottom = c[c.length - 1].y; }
+      });
+    }
+    var stacks = [], all = [];
+    measured.forEach(function (s) {
+      // The top of the stack is the highest line that is its own. A line that carries on past the
+      // side of the stack, or has only the room between it and the next line, belongs to what is
+      // behind: the edge of the table, a phone, a card.
+      var ext = s.ext, seenTop, grin = 0, doubt = false;
+      for (;;) {
+        var room = beside(s, ext.chain[0].y - s.pitch, ext.chain[0].y + s.pitch);
+        seenTop = topFace(px, W, H, s, ext.chain[0].y, s.pitch, room[0], room[1]);
+        if (ext.chain.length <= 2) break;
+        var past = seenTop.beyond >= 0.15, empty = likeRoom(s, ext.chain[0].y, ext.chain[1].y);
+        if (!past && !empty) break;
+        if (!past) doubt = true; // nothing but a look-alike colour to go on: it could be a chip the colour of the room
+        ext.chain.shift();
+      }
+      ext.top = ext.chain[0].y;
+      // The top face, if the camera is above the top of this stack. Its height comes from the bow of
+      // the top edge; whether it is a face at all comes from which way the chips under it curve.
+      var face = seenTop.face;
+      // A top edge too faint to follow (a dark chip against a dark room), or one that is not a clean
+      // curve, says nothing dependable about the face: a person should look at this stack.
+      if (seenTop.seen < 0.5 || seenTop.clear < 30 || seenTop.spread > 0.9) doubt = true;
+      if (face >= 0.25 * s.pitch) {
+        grin = smile(px, W, H, s, ext.top + face + 0.4 * s.pitch, Math.min(ext.bottom, ext.top + face + 5 * s.pitch));
+        if (grin < 0.03) { if (face >= 0.5 * s.pitch) doubt = true; face = 0; } // level, or looking up at it: that bow is the rim itself
+        // Two readings of the same camera angle: the bow of the top edge, and the slope of the chip
+        // edges at the sides (a slope of 1.1 times the face, as a share of the width, for the strips
+        // smile looks at). If they tell different stories, neither is to be trusted.
+        else if (Math.abs(face - grin / 1.1 * s.w) > Math.max(0.6 * s.pitch, 0.35 * face)) doubt = true;
+      } else face = 0;
+      var run = climb(ext, s.pitch, ext.top + face, face);
       if (!run) return;
       var chips = [];
       for (var k = 0; k + 1 < run.bounds.length; k++) {
@@ -362,32 +572,18 @@
         chips.push({ y0: run.bounds[k], y1: run.bounds[k + 1], rgb: rgb, lab: lab(rgb), id: null });
       }
       all = all.concat(chips);
-      stacks.push({ x0: s.x0, x1: s.x1, top: run.top, bottom: run.bottom, pitch: run.each, lean: s.lean, sure: run.sure, chips: chips });
+      stacks.push({ x0: s.x0, x1: s.x1, top: Math.round(ext.top), bottom: Math.round(ext.bottom), pitch: run.each, lean: s.lean, face: face, grin: grin, seen: seenTop.seen, clear: seenTop.clear, spread: seenTop.spread, sure: run.sure && !doubt && face < 2.5 * s.pitch, chips: chips });
     });
-    var Es = findStacks.lines, base = findStacks.base, thick = median(stacks.map(function (s) { return s.pitch; }));
-    shortStacks(Es, base, W, stacks).forEach(function (r) {
-      var view = sharpest(px, W, H, r[0], r[1]);
-      var run = climb(view.G, thick);
-      if (!run) return;
-      var chips = [];
-      for (var k = 0; k + 1 < run.bounds.length; k++) {
-        var rgb = bandColour(px, W, r[0], r[1], run.bounds[k], run.bounds[k + 1]);
-        chips.push({ y0: run.bounds[k], y1: run.bounds[k + 1], rgb: rgb, lab: lab(rgb), id: null });
-      }
-      all = all.concat(chips);
-      stacks.push({ x0: r[0], x1: r[1], top: run.top, bottom: run.bottom, pitch: run.each, lean: view.lean, sure: run.sure, chips: chips });
-    });
-    stacks.sort(function (a, b) { return a.x0 - b.x0; });
+    var thick = median(stacks.map(function (s) { return s.pitch; }));
     // The cross-check: a chip is as thick as it is wide, in every stack. A stack whose chips came
     // out thinner or thicker than the others' was counted wrongly, whatever its lines looked like.
     var shape = median(stacks.map(function (s) { return s.pitch / (s.x1 - s.x0 + 1); }));
     stacks.forEach(function (s) { if (Math.abs(s.pitch / (s.x1 - s.x0 + 1) - shape) > 0.12 * shape) s.sure = false; });
-    // Second cross-check: the stacks all stand on the same table, so in a level photo their feet are
-    // in a line. One that ends higher or lower than its neighbours lost or gained a chip there.
+    // Second cross-check: a stack whose foot is off the line the others stand on lost or gained a chip there.
     if (stacks.length > 1) {
       var mid = function (s) { return (s.x0 + s.x1) / 2; }, slopes = [];
       for (var a = 0; a < stacks.length; a++) for (var b = a + 1; b < stacks.length; b++) slopes.push((stacks[b].bottom - stacks[a].bottom) / (mid(stacks[b]) - mid(stacks[a])));
-      var slope = stacks.length > 2 ? Math.max(-0.05, Math.min(0.05, median(slopes))) : 0;
+      var slope = stacks.length > 2 ? Math.max(-0.06, Math.min(0.06, median(slopes))) : 0;
       var level = median(stacks.map(function (s) { return s.bottom - slope * mid(s); }));
       stacks.forEach(function (s) { if (Math.abs(s.bottom - slope * mid(s) - level) > 0.5 * thick) s.sure = false; });
     }
@@ -398,7 +594,8 @@
       s.chips.forEach(function (chip) { delete chip.lab; if (chip.id != null) counts[chip.id] = (counts[chip.id] || 0) + 1; total++; });
     });
     var pitches = stacks.map(function (s) { return s.pitch; });
-    return { stacks: stacks, counts: counts, total: total, pitch: pitches.length ? median(pitches) : 0, coloursSure: !!named, sure: stacks.length > 0 && !!named && stacks.every(function (s) { return s.sure; }) };
+    var above = stacks.some(function (s) { return s.face > 1.2 * s.pitch; });
+    return { stacks: stacks, counts: counts, total: total, pitch: pitches.length ? median(pitches) : 0, above: above, coloursSure: !!named, sure: stacks.length > 0 && !!named && stacks.every(function (s) { return s.sure; }) };
   }
   /* img: { data, width, height }, the photo as taken. colours: [{ id, color: '#rrggbb' }], the
    * chips in this game. The photo is first turned level and brought to the size the counting
@@ -424,6 +621,5 @@
   /* The counting is most dependable when one chip is about this many pixels thick: thick enough
    * for the join to be a clear line, not so thick that the chip's texture starts to look like one. */
   var BEST_PITCH = 14;
-
   return { read: read, analyse: analyse, lab: lab, hexToRgb: hexToRgb };
 });

@@ -1002,11 +1002,14 @@
       if (!g) return '';
       if (sheet.state === 'busy') return '<h2>Counting your chips…</h2><p class="sheet-note">Reading the stacks in the photo.</p>';
       if (sheet.state !== 'done') {
-        return '<h2>No stacks in that photo</h2><p class="sheet-note">Stand the chips in stacks and take the photo from the side, level with the table, in good light.</p>' +
+        return '<h2>' + (sheet.state === 'hard' ? 'That photo is hard to read' : 'No stacks in that photo') + '</h2><p class="sheet-note">' +
+          (sheet.state === 'hard' ? 'Hold the phone lower, level with the chips, so you see their edges and not their tops. Good light helps.'
+            : 'Stand the chips in stacks and take the photo from the side, level with the table, in good light.') + '</p>' +
           '<div class="sheet-actions"><button class="btn" data-act="close-sheet">Type them in</button><button class="btn primary" data-act="photo-go">Try again</button></div>';
       }
       var r = sheet.result, unsure = r.unsure;
-      var note = unsure ? (unsure === 1 ? 'One stack is' : unsure + ' stacks are') + ' marked <b>?</b> — count ' + (unsure === 1 ? 'that one' : 'those') + ' yourself to be sure.'
+      var note = unsure ? (unsure === 1 ? 'One stack is' : unsure + ' stacks are') + ' marked <b>?</b> — count ' + (unsure === 1 ? 'that one' : 'those') + ' yourself to be sure.' +
+        (r.above ? ' It reads better with the phone lower, level with the chips.' : '')
         : !r.coloursSure ? 'Check the colours below: two of them look alike in this light.' : 'Every stack read clearly.';
       return '<h2>' + plural(r.total, 'chip') + ' found</h2><p class="sheet-note' + (unsure || !r.coloursSure ? ' warn' : '') + '">' + note + '</p>' +
         '<img class="photo-read" src="' + sheet.picture + '" alt="Your photo with the number of chips marked on each stack">' +
@@ -1376,9 +1379,10 @@
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           var res = ChipCount.read(ctx.getImageData(0, 0, canvas.width, canvas.height), g.lines.map(function (l) { return { id: l.id, color: l.color }; }));
           if (!res.stacks.length) return show({ type: 'photo', state: 'none' });
+          if (res.stacks.every(function (s) { return !s.sure; })) return show({ type: 'photo', state: 'hard' }); // nothing in it could be trusted: don't offer numbers
           show({
             type: 'photo', state: 'done', picture: pictureOf(res),
-            result: { counts: res.counts, total: res.total, coloursSure: res.coloursSure, unsure: res.stacks.filter(function (s) { return !s.sure; }).length },
+            result: { counts: res.counts, total: res.total, coloursSure: res.coloursSure, above: !!res.above, unsure: res.stacks.filter(function (s) { return !s.sure; }).length },
           });
         } catch (e) {
           show({ type: 'photo', state: 'none' });

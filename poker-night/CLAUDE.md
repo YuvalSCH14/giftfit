@@ -44,8 +44,11 @@ wants it to save the count at cash-out and expects no mistakes. The rule that fo
 a wrong count that claims to be sure is the one unacceptable outcome. When in doubt the stack is
 marked "?" and a person checks it; manual entry always stays.
 
-State on 26 Nov 2026: exact on the owner's first sample (122 chips, 6 stacks) and on the drawn
-tests in `test/chipcount.test.js`. Not yet handled: a photo taken from a little above, where the
-visible top face of a stack can be read as one more chip. Until that is solved and measured on
-real photos, the Photo button only appears on a phone that opened the app once with `?photo=1`.
-
+State on 26 Nov 2026, measured on the owner's six sample photos (24 stacks with a known count):
+13 right and sure, 3 right but marked "?", 8 wrong but marked "?", none wrong and sure; a photo
+taken from steeply above is refused outright. The clean side-on photo is exact (122 chips).
+What still fails, always flagged: dark chips on top against a dark background seen from a little
+above (the top face cannot be measured), and things right behind a stack (table rail, phone,
+cards). The checks were tuned on those six photos, so they are not proven on others. Until it is
+measured on more real photos, the Photo button only appears on a phone that opened the app once
+with `?photo=1`. `test/chipcount.test.js` uses drawn pictures and guards the logic only.

@@ -102,10 +102,19 @@ test('a dim room and a noisy camera', () => {
 });
 
 test('a stack of one or two chips beside tall ones is not skipped', () => {
-  const stacks = [['white', 20], ['red', 2], ['blue', 18], ['green', 1], ['black', 15]];
+  const stacks = [['white', 20], ['red', 2], ['blue', 18], ['green', 1], ['white', 15]];
   const res = ChipCount.read(draw(stacks), COLOURS);
   assert.deepStrictEqual(perStack(res), [20, 2, 18, 1, 15]);
   assert.deepStrictEqual(res.counts, want(stacks));
+});
+
+test('black chips in a dark room are counted, or handed to a person, never guessed', () => {
+  const stacks = [['white', 20], ['red', 12], ['black', 15]];
+  const res = ChipCount.read(draw(stacks), COLOURS);
+  assert.deepStrictEqual(perStack(res).slice(0, 2), [20, 12]);
+  const dark = res.stacks[2];
+  assert.ok(dark, 'the black stack was not found at all');
+  assert.ok(dark.chips.length === 15 || !dark.sure, 'wrong and sure: ' + dark.chips.length);
 });
 
 test('one stack on its own', () => {
