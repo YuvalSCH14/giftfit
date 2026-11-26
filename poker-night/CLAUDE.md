@@ -52,3 +52,13 @@ above (the top face cannot be measured), and things right behind a stack (table 
 cards). The checks were tuned on those six photos, so they are not proven on others. Until it is
 measured on more real photos, the Photo button only appears on a phone that opened the app once
 with `?photo=1`. `test/chipcount.test.js` uses drawn pictures and guards the logic only.
+
+Claude API test (26 Nov 2026), `api/photo.js` (`POST /api/photo/count`, Claude Opus 5.5, effort
+high): only accounts listed in the Vercel variable `PHOTO_AI_USERS` can call it, with daily caps.
+The six photos sent twice each (48 stack readings): 32 right, 16 wrong, one of them wrong while
+marked sure (bar photo, a 4-chip stack read as 5). About 3.6 cents and 16 seconds per photo.
+It got the photo with the wooden rail behind right where the phone counter failed, and failed
+others the phone got right. Trusting a stack only when the phone counter and Claude agree gave
+22 of 48 trusted, all correct; not much more coverage than the phone counter alone. Not wired
+into the app; the owner has to decide whether it is worth it.
+

@@ -13,6 +13,8 @@ const Core = require('../core.js');
 const SESSION_COOKIE = 'pn_session';
 const SESSION_SECONDS = 60 * 60 * 24 * 90;
 const MAX_BODY = 64 * 1024;
+const MAX_PHOTO_BODY = 5 * 1024 * 1024; // one photo, for counting chips
+const Photo = require('./photo.js');
 const K = Core.K;
 const cred = (id) => 'pn:cred:' + id; // salt + password hash; never read by core.js
 const session = (hashed) => 'pn:session:' + hashed;
@@ -147,6 +149,7 @@ async function route(req, store) {
 
   const userId = token ? await store.cmd('GET', session(sha256(token))) : null;
   if (!userId) fail(401, 'signed_out', 'Sign in to carry on.');
+  if (key === 'POST photo/count') return Photo.countFromPhoto({ store, userId, body, env: process.env, fail, limit });
   const core = Core.createCore({ store, rid });
   return core.handle(userId, req.method, req.path, body);
 }
@@ -164,14 +167,14 @@ async function handle(req, store) {
 function safeJson(text) {
   try { return JSON.parse(text); } catch (e) { return undefined; }
 }
-async function readBody(req) {
+async function readBody(req, max) {
   // Vercel may have parsed the JSON body already.
   if (req.body !== undefined) return typeof req.body === 'string' ? safeJson(req.body) : req.body;
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY) return undefined;
+    if (size > (max || MAX_BODY)) return undefined;
     chunks.push(chunk);
   }
   return chunks.length ? safeJson(Buffer.concat(chunks).toString('utf8')) : undefined;
@@ -195,7 +198,7 @@ module.exports = async function handler(req, res) {
   const response = await handle({
     method,
     path: url.pathname.replace(/^\/api\/?/, '').replace(/\/+$/, ''),
-    body: method === 'GET' ? undefined : await readBody(req),
+    body: method === 'GET' ? undefined : await readBody(req, /\/photo\/count$/.test(url.pathname) ? MAX_PHOTO_BODY : MAX_BODY),
     cookies: parseCookies(req.headers.cookie),
     ip: forwarded || (req.socket && req.socket.remoteAddress) || 'unknown',
     origin: first(req.headers.origin),
