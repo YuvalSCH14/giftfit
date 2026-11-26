@@ -10,6 +10,7 @@ var SHELL = [
   'version.js',
   'solver.js',
   'core.js',
+  'chipcount.js',
   'app.js',
   'manifest.webmanifest',
   'icons/icon.svg',

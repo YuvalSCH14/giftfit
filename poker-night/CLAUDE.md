@@ -36,3 +36,16 @@ game.
 Bump `version.js` and `VERSION` in `sw.js` together (a test checks they match); the home screen
 shows the number. Run `npm test`. The project on Vercel is not linked to Git: it is deployed by
 uploading this folder.
+
+## Counting chips from a photo (in progress, switched off)
+
+`chipcount.js` reads a side-on photo of chip stacks on the phone; nothing is uploaded. The owner
+wants it to save the count at cash-out and expects no mistakes. The rule that follows from that:
+a wrong count that claims to be sure is the one unacceptable outcome. When in doubt the stack is
+marked "?" and a person checks it; manual entry always stays.
+
+State on 26 Nov 2026: exact on the owner's first sample (122 chips, 6 stacks) and on the drawn
+tests in `test/chipcount.test.js`. Not yet handled: a photo taken from a little above, where the
+visible top face of a stack can be read as one more chip. Until that is solved and measured on
+real photos, the Photo button only appears on a phone that opened the app once with `?photo=1`.
+

@@ -36,6 +36,7 @@
   var ICON = {
     spade: '<svg class="brand-mark" viewBox="0 0 20 22" aria-hidden="true"><path d="M10 0C7 4.600 1 7.400 1 12.600c0 2.900 2.200 5 4.900 5 1.300 0 2.400-.500 3.100-1.200-.300 2-1.100 3.700-2.400 5h6.800c-1.300-1.300-2.100-3-2.400-5 .700.700 1.800 1.200 3.100 1.200 2.700 0 4.900-2.100 4.900-5C19 7.400 13 4.600 10 0z"/></svg>',
     back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
+    camera: '<svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.500-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.200" r="3.400"/></svg>',
     more: '<svg class="solid" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.800"/><circle cx="12" cy="12" r="1.800"/><circle cx="19" cy="12" r="1.800"/></svg>',
     play: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.500"/><circle cx="12" cy="12" r="4"/><path d="M12 3.500v3M12 17.500v3M3.500 12h3M17.500 12h3"/></svg>',
     friends: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.500" r="3.200"/><path d="M3 19.500c.500-3.300 2.900-5 6-5s5.500 1.700 6 5"/><circle cx="17" cy="9.500" r="2.500"/><path d="M17.500 14.500c2 .300 3.200 1.700 3.500 4"/></svg>',
@@ -179,7 +180,7 @@
     s.friendIds = Array.isArray(s.friendIds) ? s.friendIds.filter(function (x) { return typeof x === 'string'; }) : [];
     s.count = Math.max(2, Math.min(MAX_PLAYERS, parseInt(s.count, 10) || 6));
     delete s.guests; // from before the player count became one number
-    s.signedIn = !!s.signedIn; s.showWorth = !!s.showWorth; s.tipDismissed = !!s.tipDismissed;
+    s.signedIn = !!s.signedIn; s.showWorth = !!s.showWorth; s.tipDismissed = !!s.tipDismissed; s.photoTip = !!s.photoTip;
     if (typeof saved.set !== 'string') { // from before the chip set was picked for every game
       var standard = Object.keys(PRESETS).filter(function (key) {
         return PRESETS[key].length === s.chips.length && PRESETS[key].every(function (row, i) { return s.chips[i].name === row[0] && s.chips[i].count === String(row[1]) && !s.chips[i].lock; });
@@ -789,8 +790,9 @@
           '<p class="lede">' + (c.mode === 'chips' ? 'How many of each colour ' + (own ? 'do you' : 'do they') + ' have left?' : 'What are ' + (own ? 'your' : 'their') + ' chips worth in total?') + '</p>' + entry +
           '<div class="count-total" id="countTotal"></div>' +
           (open ? '<button class="felt-link" data-act="count-mode">' + (c.mode === 'chips' ? 'Type the total instead' : 'Count chips instead') + '</button>' : ''),
-        dock: open ? '<button class="btn primary big" data-act="save-count">Done</button>'
-          : '<button class="btn primary big" data-act="go" data-to="settle">See the results</button>',
+        dock: !open ? '<button class="btn primary big" data-act="go" data-to="settle">See the results</button>'
+          : c.mode === 'chips' && canPhoto() ? '<div class="dock-row"><button class="btn" data-act="count-photo">' + ICON.camera + 'Photo</button><button class="btn primary big" data-act="save-count">Done</button></div>'
+            : '<button class="btn primary big" data-act="save-count">Done</button>',
       });
     },
 
@@ -984,6 +986,34 @@
         }).join('') + '</div>';
       }
       return html + '<div class="sheet-actions"><button class="btn" data-act="edit-box">Change chip set</button><button class="btn primary" data-act="close-sheet">Done</button></div>';
+    },
+    /* Shown until a photo has worked once: three things that make the count come out right. */
+    phototip: function () {
+      var tip = function (n, title, sub) { return '<div class="todo-step"><i>' + n + '</i><span><b>' + title + '</b><small>' + sub + '</small></span></div>'; };
+      return '<h2>Count from a photo</h2><div class="todo">' + tip(1, 'Stand your chips in stacks', 'Side by side, with a small gap between them') +
+        tip(2, 'Hold the phone level with the table', 'From the side, so you see the edges of the chips') +
+        tip(3, 'Check the numbers it finds', 'You can still change them before you save') + '</div>' +
+        '<p class="sheet-note">The photo stays on your phone.</p>' +
+        '<div class="sheet-actions"><button class="btn" data-act="close-sheet">Not now</button><button class="btn primary" data-act="photo-go">Open the camera</button></div>';
+    },
+    /* What the photo showed: the picture with a number on every stack, and the total per colour. */
+    photo: function (sheet) {
+      var g = game();
+      if (!g) return '';
+      if (sheet.state === 'busy') return '<h2>Counting your chips…</h2><p class="sheet-note">Reading the stacks in the photo.</p>';
+      if (sheet.state !== 'done') {
+        return '<h2>No stacks in that photo</h2><p class="sheet-note">Stand the chips in stacks and take the photo from the side, level with the table, in good light.</p>' +
+          '<div class="sheet-actions"><button class="btn" data-act="close-sheet">Type them in</button><button class="btn primary" data-act="photo-go">Try again</button></div>';
+      }
+      var r = sheet.result, unsure = r.unsure;
+      var note = unsure ? (unsure === 1 ? 'One stack is' : unsure + ' stacks are') + ' marked <b>?</b> — count ' + (unsure === 1 ? 'that one' : 'those') + ' yourself to be sure.'
+        : !r.coloursSure ? 'Check the colours below: two of them look alike in this light.' : 'Every stack read clearly.';
+      return '<h2>' + plural(r.total, 'chip') + ' found</h2><p class="sheet-note' + (unsure || !r.coloursSure ? ' warn' : '') + '">' + note + '</p>' +
+        '<img class="photo-read" src="' + sheet.picture + '" alt="Your photo with the number of chips marked on each stack">' +
+        '<div class="photo-counts">' + g.lines.map(function (l) {
+          return '<span><i class="chip sm" style="' + chipStyle(l.color) + '"></i><b>' + (r.counts[l.id] || 0) + '</b> ' + esc(l.name) + '</span>';
+        }).join('') + '</div>' +
+        '<div class="sheet-actions"><button class="btn" data-act="photo-go">Retake</button><button class="btn primary" data-act="photo-use">Use these numbers</button></div>';
     },
     stacks: function () {
       var g = game();
@@ -1271,6 +1301,91 @@
     if (!p || isNaN(out)) { el.innerHTML = '<span>Worth</span><b>&ndash;</b>'; return; }
     var net = out - g.buyIn * (1 + (p.rebuys || 0));
     el.innerHTML = '<span>Worth <b>' + esc(money(out, g.currency)) + '</b></span><b class="' + netClass(net) + '">' + esc(netText(net, g.currency)) + '</b>';
+  }
+  /* ── Counting chips from a photo ───────────
+   * The photo is read on this phone (chipcount.js) and never sent anywhere. What comes back fills
+   * in the same boxes a person would type into, so the player still looks before saving. */
+  /* Not switched on for everyone yet: it reads a clean side-on photo exactly, but a photo taken
+   * from a little above can still come out a chip over. Opening the app once with ?photo=1 turns
+   * it on for that phone (and ?photo=0 off again), so it can be tried on real chips first. */
+  function photoOn() { try { return localStorage.getItem('pokernight.photo') === '1'; } catch (e) { return false; } }
+  function canPhoto() { return photoOn() && typeof ChipCount !== 'undefined' && !!$('#chipPhoto') && !!window.URL && !!document.createElement('canvas').getContext; }
+  function pickPhoto() {
+    var input = $('#chipPhoto');
+    if (!input) return;
+    input.value = ''; // the same photo twice is still a new photo
+    input.click();
+  }
+  /* The levelled photo, cropped to the stacks, with each chip ticked and each stack numbered. */
+  function pictureOf(res) {
+    var v = res.view, full = document.createElement('canvas');
+    full.width = v.width; full.height = v.height;
+    full.getContext('2d').putImageData(new ImageData(v.data instanceof Uint8ClampedArray ? v.data : new Uint8ClampedArray(v.data), v.width, v.height), 0, 0);
+    var p = res.pitch || 14, x0 = v.width, x1 = 0, y0 = v.height, y1 = 0;
+    res.stacks.forEach(function (s) { x0 = Math.min(x0, s.x0); x1 = Math.max(x1, s.x1); y0 = Math.min(y0, s.top); y1 = Math.max(y1, s.bottom); });
+    x0 = Math.max(0, Math.round(x0 - 2 * p)); x1 = Math.min(v.width, Math.round(x1 + 2 * p));
+    y0 = Math.max(0, Math.round(y0 - 3.4 * p)); y1 = Math.min(v.height, Math.round(y1 + 1.5 * p));
+    var k = Math.max(1, Math.min(3, 900 / (x1 - x0))), out = document.createElement('canvas'), c = out.getContext('2d');
+    out.width = Math.round((x1 - x0) * k); out.height = Math.round((y1 - y0) * k);
+    c.imageSmoothingQuality = 'high';
+    c.drawImage(full, x0, y0, x1 - x0, y1 - y0, 0, 0, out.width, out.height);
+    var X = function (x) { return (x - x0) * k; }, Y = function (y) { return (y - y0) * k; }, u = p * k;
+    res.stacks.forEach(function (s) {
+      var w = (s.x1 - s.x0) * k, tick = Math.max(6, w * 0.09);
+      c.lineWidth = Math.max(2, u * 0.12); c.lineCap = 'round';
+      [['rgba(0,0,0,0.55)', c.lineWidth + 2], [s.sure ? '#ffffff' : '#ffc46b', c.lineWidth]].forEach(function (pen) { // a tick per chip, down both sides
+        c.strokeStyle = pen[0]; c.lineWidth = pen[1];
+        c.beginPath();
+        s.chips.forEach(function (chip) {
+          var y = Y((chip.y0 + chip.y1) / 2);
+          c.moveTo(X(s.x0) - tick * 0.2, y); c.lineTo(X(s.x0) + tick, y);
+          c.moveTo(X(s.x1) - tick, y); c.lineTo(X(s.x1) + tick * 0.2, y);
+        });
+        c.stroke();
+      });
+      var label = s.chips.length + (s.sure ? '' : '?'), size = Math.max(22, Math.min(u * 1.9, w * 0.42));
+      c.font = '700 ' + size + 'px system-ui, -apple-system, sans-serif';
+      var tw = c.measureText(label).width + size * 0.8, cx = X((s.x0 + s.x1) / 2), cy = Math.max(size * 0.8, Y(s.top) - size * 1.05);
+      c.fillStyle = s.sure ? '#f4efe2' : '#ffc46b';
+      c.beginPath();
+      if (c.roundRect) c.roundRect(cx - tw / 2, cy - size * 0.7, tw, size * 1.4, size * 0.7); else c.rect(cx - tw / 2, cy - size * 0.7, tw, size * 1.4);
+      c.fill();
+      c.fillStyle = '#16211b'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(label, cx, cy + size * 0.04);
+    });
+    return out.toDataURL('image/jpeg', 0.82);
+  }
+  function readPhoto(file) {
+    var g = game();
+    if (!g || !file || !ui.count) return;
+    openSheet({ type: 'photo', state: 'busy' });
+    var url = URL.createObjectURL(file), img = new Image();
+    var show = function (sheet) {
+      URL.revokeObjectURL(url);
+      if (!ui.sheet || ui.sheet.type !== 'photo') return; // closed while it was counting
+      ui.sheet = sheet;
+      render();
+    };
+    img.onerror = function () { show({ type: 'photo', state: 'none' }); };
+    img.onload = function () {
+      setTimeout(function () { // let "Counting…" get onto the screen first
+        try {
+          var scale = Math.min(1, 2400 / Math.max(img.naturalWidth, img.naturalHeight));
+          var canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true });
+          canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          var res = ChipCount.read(ctx.getImageData(0, 0, canvas.width, canvas.height), g.lines.map(function (l) { return { id: l.id, color: l.color }; }));
+          if (!res.stacks.length) return show({ type: 'photo', state: 'none' });
+          show({
+            type: 'photo', state: 'done', picture: pictureOf(res),
+            result: { counts: res.counts, total: res.total, coloursSure: res.coloursSure, unsure: res.stacks.filter(function (s) { return !s.sure; }).length },
+          });
+        } catch (e) {
+          show({ type: 'photo', state: 'none' });
+        }
+      }, 80);
+    };
+    img.src = url;
   }
   function startCount(g, pid) {
     var p = playerOf(g, pid);
@@ -1642,6 +1757,17 @@
       if (input) { input.value = c.counts[id]; replay(input, 'pop'); }
       updateCountTotal();
     },
+    'count-photo': function () { if (prefs.photoTip) pickPhoto(); else openSheet({ type: 'phototip' }); },
+    'photo-go': function () { ui.sheet = null; render(); pickPhoto(); },
+    'photo-use': function () {
+      var g = game(), sheet = ui.sheet;
+      if (!g || !ui.count || !sheet || !sheet.result) return closeSheet();
+      g.lines.forEach(function (l) { ui.count.counts[l.id] = String(sheet.result.counts[l.id] || 0); });
+      prefs.photoTip = true;
+      savePrefs();
+      closeSheet();
+      toast('Filled in from the photo. Check, then tap Done.');
+    },
     'count-mode': function () { ui.count.mode = ui.count.mode === 'chips' ? 'amount' : 'chips'; ui.anim = 'fade'; render(); },
     'save-count': saveCount,
     'close-game': function () {
@@ -1784,6 +1910,7 @@
   /* A name typed in a sheet is sent when the field is left, not on every key. */
   document.addEventListener('change', function (e) {
     var el = e.target;
+    if (el.id === 'chipPhoto') return readPhoto(el.files && el.files[0]);
     if (el.dataset.field === 'player-name' && el.value.trim()) act({ type: 'rename', pid: el.dataset.pid, name: el.value }).then(softRender);
   });
   document.addEventListener('focusout', function () {
@@ -1997,7 +2124,8 @@
     var ok = function (v) { return /^[a-z0-9]{6,40}$/.test(v || ''); };
     if (ok(q.get('g')) && ok(q.get('c'))) prefs.pending = { g: q.get('g'), c: q.get('c') };
     else if (ok(q.get('f'))) prefs.pending = { f: q.get('f') };
-    if (q.has('g') || q.has('f')) {
+    if (q.has('photo')) { try { localStorage.setItem('pokernight.photo', q.get('photo') === '1' ? '1' : '0'); } catch (e) { /* stays off */ } }
+    if (q.has('g') || q.has('f') || q.has('photo')) {
       savePrefs();
       try { history.replaceState(null, '', location.pathname); } catch (e) { /* the link just stays in the bar */ }
     }
