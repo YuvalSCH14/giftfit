@@ -1114,6 +1114,7 @@
     }
     paint(html);
     ui.anim = '';
+    if (updateReady) setTimeout(takeUpdate, 400); // a newer version is waiting for a quiet moment
     ui.sheetIn = false;
     ui.stale = false;
     ui.pop = false;
@@ -1704,6 +1705,8 @@
 
   /* ── Wiring ──────────────────────────────── */
   var wantReload = false; // someone asked for the update, so take it the moment it is ready
+  var updateReady = false, takeUpdate = function () { /* set up with the service worker, below */ };
+  var TAB_KEY = 'pokernight.tab';
   var lastSwipe = 0;
   document.addEventListener('click', function (e) {
     if (Date.now() - lastSwipe < 300) return; // the finger that swiped is not also pressing a button
@@ -1978,6 +1981,13 @@
     try { data = Object.assign(empty(), JSON.parse(localStorage.getItem(CACHE_KEY))); } catch (e) { data = empty(); }
   }
   if (prefs.pending && !prefs.signedIn) ui.screen = 'account';
+  else {
+    try { // an update just reloaded the page: come back to the tab that was open
+      var tabWas = sessionStorage.getItem(TAB_KEY);
+      sessionStorage.removeItem(TAB_KEY);
+      if (TABS.indexOf(tabWas) >= 0) ui.screen = tabWas;
+    } catch (e) { /* start on Play */ }
+  }
   render();
   refresh().then(function () {
     if (!followLink()) softRender();
@@ -1986,15 +1996,31 @@
   });
 
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-    // When a new version takes over just after opening, show it straight away rather than on the
-    // next launch. Only on the three top-level screens, so it never interrupts a game or a form.
-    var hadWorker = !!navigator.serviceWorker.controller, opened = Date.now(), reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (reloaded) return;
-      if (!wantReload && (!hadWorker || Date.now() - opened > 15000 || TABS.indexOf(ui.screen) < 0 || ui.sheet)) return;
+    /* A new version is shown as soon as it is safe to: on one of the three tabs, with nothing
+     * open and nobody typing. In the middle of a game or a form it waits, and is taken the next
+     * time one of the tabs is on screen. An app left open in the background never reloads by
+     * itself, so every time it comes back to the front it asks whether there is a newer one. */
+    var hadWorker = !!navigator.serviceWorker.controller, reloaded = false, askedAt = Date.now();
+    takeUpdate = function () {
+      var el = document.activeElement;
+      if (reloaded || !(updateReady || wantReload)) return;
+      if (!wantReload && (TABS.indexOf(ui.screen) < 0 || ui.sheet || ui.dragging || ui.busy || (el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)))) return;
       reloaded = true;
+      try { if (TABS.indexOf(ui.screen) >= 0) sessionStorage.setItem(TAB_KEY, ui.screen); } catch (e) { /* it opens on Play */ }
       location.reload();
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadWorker) { hadWorker = true; return; } // the very first install: this page is already the newest
+      updateReady = true;
+      takeUpdate();
     });
+    var askForUpdate = function () {
+      if (document.hidden || Date.now() - askedAt < 60000) return;
+      askedAt = Date.now();
+      navigator.serviceWorker.getRegistration().then(function (reg) { if (reg) return reg.update(); }).catch(function () { /* offline: next time */ });
+    };
+    document.addEventListener('visibilitychange', askForUpdate);
+    window.addEventListener('pageshow', askForUpdate);
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('sw.js').catch(function () { /* offline use is a bonus, not a requirement */ });
     });
