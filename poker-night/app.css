@@ -384,10 +384,18 @@ label.chip:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
 .pile-label .worth { display: block; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .facts { display: flex; justify-content: center; flex-wrap: wrap; gap: 2px 20px; padding: 10px 0; border-top: 1px solid var(--on-felt-line); color: var(--on-felt-2); font-size: 15px; text-align: center; }
 .facts b { color: var(--on-felt); font-weight: 600; font-variant-numeric: tabular-nums; }
-.problem { padding: 24px 20px; text-align: left; align-self: stretch; }
-.problem h2 { font-size: 22px; margin-bottom: 8px; }
-.problem p { color: var(--ink-2); margin-bottom: 16px; }
-.problem p:last-child { margin-bottom: 0; }
+/* Under the buy-in: what that amount gets each player, or what is in the way. */
+.fit-line { min-height: 44px; margin: 0; text-align: center; font-size: 15px; line-height: 1.4; color: var(--on-felt-2); }
+.fit-line b { color: var(--on-felt); font-weight: 600; font-variant-numeric: tabular-nums; }
+.fit-line .warn { display: block; color: #ffd7a1; }
+.fit-line .felt-link { margin-top: 2px; }
+/* The to-do list shown once a game is created. */
+.todo { display: grid; }
+.todo-step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; align-items: center; padding: 9px 0; }
+.todo .todo-step { border-top: 1px solid var(--on-felt-line); }
+.todo-step > i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--on-felt); color: var(--ink); font: 700 15px/1 var(--body); font-style: normal; }
+.todo-step b { display: block; font: 600 17px/1.25 var(--body); }
+.todo-step small { display: block; font-size: 14.5px; line-height: 1.3; color: var(--on-felt-2); }
 
 /* ── The table ───────────────────────────── */
 .felt-wrap { flex: 1 1 0 !important; min-height: 190px; position: relative; }
@@ -582,7 +590,7 @@ button.row:active { background: var(--card-inset); }
 @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.16); } 100% { transform: scale(1); } }
 @keyframes seat-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); } }
 @keyframes bump { 0% { transform: scale(1); } 35% { transform: scale(1.22); } 100% { transform: scale(1); } }
-.screen:is(.fwd, .back, .fade) :is(.row, .choice, .game-card, .menu-item) { animation: row-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(min(var(--n, 0), 8) * 26ms + 50ms); }
+.screen:is(.fwd, .back, .fade) :is(.row, .choice, .game-card, .menu-item, .todo-step) { animation: row-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(min(var(--n, 0), 8) * 26ms + 50ms); }
 .screen:is(.fwd, .back, .fade) .choice:nth-child(2), .screen:is(.fwd, .back, .fade) .game-card:nth-child(2) { animation-delay: 90ms; }
 .screen:is(.fwd, .back, .fade) .choice:nth-child(3) { animation-delay: 130ms; }
 .screen:is(.fwd, .back, .fade) .tile { animation: pop-in 0.2s cubic-bezier(0.3, 1.3, 0.5, 1) both; animation-delay: 60ms; }

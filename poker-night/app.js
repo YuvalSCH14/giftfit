@@ -1,6 +1,6 @@
 /* Poker Night — the page.
- * One screen at a time, each sized to the phone so nothing scrolls: a short set-up (who, how much,
- * which chips, the split), then the game itself (table, count, settle).
+ * One screen at a time, each sized to the phone so nothing scrolls: a short set-up (which chips,
+ * who, how much), the brief on what to hand out, then the game itself (table, count, settle).
  *
  * Signed in, every call goes to /api and friends see the same game on their own phones.
  * Signed out, the same calls run right here against core.js and the phone's storage.
@@ -410,11 +410,9 @@
     if (prefs.pick >= solved.options.length) prefs.pick = 0;
   }
   function option() { return solved.options[prefs.pick] || solved.options[0] || null; }
-  /* The chip set is asked for once. After that a new game is players, buy-in, split, and the
-   * chips are one tap away from the split's Options. */
-  /* Every new game asks which chip set is on the table: people play at different houses. The set
-   * used last time is marked, so the usual answer is one tap. */
-  function steps() { return ['players', 'buyin', 'box', 'split']; }
+  /* Setting up a game is three questions: which chips, how many people, how much. The game is
+   * created on the last one, and only then does the app say what to do with the chips (brief). */
+  function steps() { return ['box', 'players', 'buyin']; }
   /* Colours in play that still need the number printed on them. */
   function needNumber(chips, numbers) {
     return numbers ? chips.filter(function (c) { return /^\d+$/.test(String(c.count).trim()) && parseInt(c.count, 10) > 0 && !(parseMoney(c.lock) > 0); }) : [];
@@ -496,13 +494,13 @@
   }
   function presetColour(name) { return PALETTE.filter(function (p) { return p[0] === name; })[0][1]; }
 
-  function problemView(p) {
-    var title = 'No split yet', body = '', action = '';
+  function problemInfo(p) {
+    var title = 'No split yet', body = '', action = null;
     switch (p.code) {
       case 'no-chips':
         title = 'The chip set is empty';
         body = 'Tell the app which chips you have.';
-        action = '<button class="btn primary" data-act="edit-box">Pick a chip set</button>';
+        action = { act: 'edit-box', label: 'Pick a chip set' };
         break;
       case 'few-players':
         title = 'Poker needs company';
@@ -510,17 +508,17 @@
         break;
       case 'buy-in':
         title = 'What’s the buy-in?';
-        body = 'Go back and type an amount above zero.';
+        body = 'Type an amount above zero.';
         break;
       case 'missing-number':
         title = 'A colour has no number';
         body = namesOf(needNumber(prefs.chips, true)) + (needNumber(prefs.chips, true).length === 1 ? ' still needs' : ' still need') + ' the number printed on the chip.';
-        action = '<button class="btn primary" data-act="edit-box">Choose the chips</button>';
+        action = { act: 'edit-box', label: 'Choose the chips' };
         break;
       case 'duplicate-number':
         title = 'Two colours, one number';
         body = 'Two colours have the same number on them. Each colour needs its own.';
-        action = '<button class="btn primary" data-act="edit-box">Choose the chips</button>';
+        action = { act: 'edit-box', label: 'Choose the chips' };
         break;
       case 'numbers-no-fit':
         title = 'Those chips can’t make this buy-in';
@@ -531,20 +529,42 @@
         body = p.maxReserve
           ? 'This set can keep ' + plural(p.maxReserve, 'rebuy') + ' aside with ' + playerCount() + ' players.'
           : 'With ' + playerCount() + ' players, every chip is needed on the table.';
-        action = '<button class="btn primary" data-act="set-reserve" data-value="' + (p.maxReserve || 0) + '">Keep ' + (p.maxReserve || 0) + ' aside instead</button>';
+        action = { act: 'set-reserve', label: 'Keep ' + (p.maxReserve || 0) + ' aside instead', value: p.maxReserve || 0 };
         break;
       case 'players':
         title = 'Too many players for this chip set';
         body = 'There aren’t enough chips for ' + playerCount() + ' players at this buy-in. The most this set can do is ' + p.maxPlayers + '.';
-        action = '<button class="btn primary" data-act="edit-box">Change the chip set</button>';
+        action = { act: 'edit-box', label: 'Change the chip set' };
         break;
       default:
         title = 'That buy-in is awkward';
-        body = 'No sensible chip values add up to it exactly. Go back and try a rounder amount.';
+        body = 'No sensible chip values add up to that exactly. Try a rounder amount.';
+        action = { act: 'edit-box', label: 'Or change the chip set' };
     }
-    return '<div class="panel problem"><h2>' + title + '</h2><p>' + esc(body) + '</p>' + action + '</div>';
+    return { title: title, body: body, action: action };
   }
 
+  /* Under the buy-in: what each player will get, or why these chips, players and amount don't
+   * work together, with the one tap that fixes it. Nothing is said until an amount is typed. */
+  function fitHtml() {
+    if (!(parseMoney(prefs.buyIn) > 0)) return '';
+    compute();
+    if (solved.problem) {
+      var p = problemInfo(solved.problem), a = p.action;
+      return '<span class="warn">' + esc(p.body) + '</span>' +
+        (a ? '<button class="felt-link" data-act="' + a.act + '"' + (a.value != null ? ' data-value="' + a.value + '"' : '') + '>' + esc(a.label) + '</button>' : '');
+    }
+    var opt = option(), cur = prefs.currency, values = opt.lines.map(function (l) { return l.value; });
+    return 'Each player gets <b>' + opt.chipsPerPlayer + ' chips</b> · blinds <b>' + esc(chipText(opt.smallBlind, values, cur, opt.rate)) + '</b> and <b>' + esc(chipText(opt.bigBlind, values, cur, opt.rate)) + '</b>';
+  }
+  function canCreate() { return parseMoney(prefs.buyIn) > 0 && !solved.problem && !!option(); }
+  function updateFit() {
+    var line = $('#fitLine');
+    if (!line) return;
+    line.innerHTML = fitHtml();
+    var ok = canCreate();
+    $$('#buyNext, #buyOptions').forEach(function (b) { b.disabled = !ok; });
+  }
   function gameCard(g) {
     var r = Core.results(g);
     var counted = g.players.length - r.waiting;
@@ -620,7 +640,7 @@
     },
 
     buyin: function () {
-      var cents = parseMoney(prefs.buyIn);
+      var cents = parseMoney(prefs.buyIn), fit = fitHtml(), ok = canCreate() && !ui.busy;
       var quick = [5, 10, 20, 50, 100].map(function (v) {
         return '<button data-act="quick-buy" data-buy="' + v + '" class="' + (cents === v * 100 ? 'on' : '') + '">' + esc(prefs.currency) + v + '</button>';
       }).join('');
@@ -630,8 +650,10 @@
           '<div class="amount"><select id="currency" aria-label="Currency">' + Core.CURRENCIES.map(function (c) {
             return '<option' + (c === prefs.currency ? ' selected' : '') + '>' + c + '</option>';
           }).join('') + '</select><input id="buyIn" type="text" inputmode="decimal" autocomplete="off" value="' + esc(prefs.buyIn) + '" aria-label="Buy-in"></div>' +
-          '<div class="quick" id="quickBuy" role="group" aria-label="Common buy-ins">' + quick + '</div><div class="grow two"></div>',
-        dock: '<button class="btn primary big" data-act="next"' + (cents > 0 ? '' : ' disabled') + ' id="buyNext">Next</button>',
+          '<div class="quick" id="quickBuy" role="group" aria-label="Common buy-ins">' + quick + '</div>' +
+          '<p class="fit-line" id="fitLine" aria-live="polite">' + fit + '</p><div class="grow two"></div>',
+        dock: '<div class="dock-row"><button class="btn" data-act="sheet" data-sheet="options" id="buyOptions"' + (ok ? '' : ' disabled') + '>Options</button>' +
+          '<button class="btn primary big" data-act="start-game"' + (ok ? '' : ' disabled') + ' id="buyNext">Create game</button></div>',
       });
     },
 
@@ -683,22 +705,24 @@
       });
     },
 
-    split: function () {
-      compute();
-      if (solved.problem) return frame({ back: true, dots: dots(), body: '<div class="center">' + problemView(solved.problem) + '</div>' });
-      var opt = option(), cur = prefs.currency, rate = opt.rate;
-      var values = opt.lines.map(function (l) { return l.value; });
-      var lede = rate > 1
-        ? '<b>' + opt.chipsPerPlayer + ' chips</b> = <b>' + fmtPoints(opt.points) + ' points</b> for ' + esc(money(parseMoney(prefs.buyIn), cur)) + '. So ' + esc(cur) + '1 is ' + fmtPoints(rate) + ' points.'
-        : '<b>' + opt.chipsPerPlayer + ' chips</b>, worth ' + esc(money(parseMoney(prefs.buyIn), cur)) + '.';
-      return frame({
-        back: true, dots: dots(),
-        body: '<h1>Give each player</h1><p class="lede">' + lede + '</p>' +
-          '<div class="grow center">' + pilesHtml(optionLines(opt), cur, rate) + '</div>' +
-          '<div class="facts"><span>Blinds start at <b>' + esc(chipText(opt.smallBlind, values, cur, rate)) + '</b> and <b>' + esc(chipText(opt.bigBlind, values, cur, rate)) + '</b></span></div>',
-        dock: '<div class="dock-row"><button class="btn" data-act="sheet" data-sheet="options">Options</button>' +
-          '<button class="btn primary big" data-act="start-game"' + (ui.busy ? ' disabled' : '') + '>Start the game</button></div>',
-      });
+    /* Shown once, straight after the game is created: what to do with the chips before the first
+     * hand. It reads from the game itself, so it is exactly what every phone will show. */
+    brief: function () {
+      var g = game();
+      if (!g) return goneFrame();
+      var cur = g.currency, values = gameValues(g), info = ui.brief && ui.brief.id === g.id ? ui.brief : {};
+      var total = g.lines.reduce(function (a, l) { return a + l.perPlayer; }, 0), n = 0;
+      var step = function (title, sub) {
+        return '<div class="todo-step" style="--n:' + n + '"><i>' + (++n) + '</i><span><b>' + title + '</b><small>' + sub + '</small></span></div>';
+      };
+      var worth = g.rate ? fmtPoints((g.buyIn * g.rate) / 100) + ' points for ' + esc(money(g.buyIn, cur)) : 'Worth ' + esc(money(g.buyIn, cur)) + ' each';
+      var body = '<h1>Get the table ready</h1>' + step('Give each player ' + total + ' chips', worth) +
+        '<div class="grow center">' + pilesHtml(g.lines, cur, g.rate) + '</div><div class="todo">' +
+        (info.reserve ? step('Keep ' + plural(info.reserve, 'spare stack') + ' ready', 'For anyone who buys back in')
+          : step('Put the other chips away', 'Bring them out if someone buys back in')) +
+        step('Blinds start at ' + esc(chipText(g.smallBlind, values, cur, g.rate)) + ' and ' + esc(chipText(g.bigBlind, values, cur, g.rate)), 'Small blind, then big blind') +
+        (info.invited ? step('Your friends can open the game now', 'It’s on their Play tab') : '') + '</div>';
+      return frame({ back: true, title: esc(g.name), body: body, dock: '<button class="btn primary big" data-act="start-playing">Start playing</button>' });
     },
 
     table: function () {
@@ -1280,11 +1304,13 @@
 
   /* ── Things people can do ────────────────── */
   function changed() { prefs.pick = 0; savePrefs(); render(); }
-  /* With the chips chosen, the split is next, whether this is the first game or a change of set. */
+  /* With the chips chosen: on to the players, or back to the buy-in if that is where the change
+   * of chips was asked for. */
   function afterBox() {
+    var back = ui.boxEdit;
     ui.boxEdit = false;
     ui.boxCheck = false;
-    go('split');
+    go(back ? 'buyin' : 'players', back ? 'back' : 'fwd');
   }
   /* Back at the table with no sheet in the way, for the things that happen on the felt. */
   function showTable() {
@@ -1344,8 +1370,8 @@
       ui.boxEdit = false;
       prefs.name = rollName(prefs.name);
       savePrefs();
-      go('table');
-      toast(invited ? 'Game on — your friends can see it now' : 'Game on');
+      ui.brief = { id: g.id, reserve: prefs.reserve, invited: invited };
+      go('brief');
     }, function (error) {
       ui.busy = false;
       render();
@@ -1436,7 +1462,7 @@
     back: function () {
       var s = ui.screen, list = steps(), at = list.indexOf(s);
       if (s === 'box' && ui.boxCustom) { leaveEditor(false); ui.anim = 'back'; return render(); } // back without saving: as it was
-      if (s === 'box' && ui.boxEdit) { ui.boxEdit = false; return go('split', 'back'); } // came from the split's options
+      if (s === 'box' && ui.boxEdit) { ui.boxEdit = false; return go('buyin', 'back'); } // came from the buy-in's options
       if (at > 0) return go(list[at - 1], 'back');
       if (at === 0) { ui.boxEdit = false; leaveEditor(false); }
       if (s === 'count') return go(ui.cameFrom === 'settle' ? 'settle' : 'table', 'back');
@@ -1485,7 +1511,7 @@
     },
     'login-instead': function () { ui.seg.account = 'login'; go('account'); },
 
-    'new-game': function () { ui.boxEdit = false; leaveEditor(false); go('players'); },
+    'new-game': function () { ui.boxEdit = false; leaveEditor(false); go('box'); },
     'players-step': function (el) {
       var least = Math.max(2, 1 + selFriends().length);
       prefs.count = Math.max(least, Math.min(MAX_PLAYERS, playerCount() + Number(el.dataset.by)));
@@ -1563,6 +1589,7 @@
     display: function (el) { prefs.display = el.dataset.display; savePrefs(); render(); },
     'edit-box': function () { ui.boxEdit = true; leaveEditor(false); go('box', 'fwd'); }, // always the list first
     'start-game': startGame,
+    'start-playing': function () { go('table'); toast('Game on'); },
 
     'open-game': function (el) { openGame(el.dataset.id); },
     seat: function (el) { if (!ui.dealing) openSheet({ type: 'player', pid: el.dataset.pid }); },
@@ -1728,9 +1755,8 @@
       prefs.buyIn = el.value;
       var cents = parseMoney(prefs.buyIn);
       $$('#quickBuy button').forEach(function (b) { b.classList.toggle('on', cents === Number(b.dataset.buy) * 100); });
-      var next = $('#buyNext');
-      if (next) next.disabled = !(cents > 0);
       prefs.pick = 0;
+      updateFit();
       return savePrefs();
     }
     if (el.id === 'currency') { prefs.currency = el.value; return changed(); }

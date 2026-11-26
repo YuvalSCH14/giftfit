@@ -20,10 +20,13 @@ game.
 ## How the flow is meant to feel
 
 - One thing per screen, nothing scrolls, one main button at the bottom.
-- Set-up is four taps: players, buy-in, chip set, split. The owner asked (26 Nov 2026) for the
-  chip set list to be shown in every new game, saved set on top. Keep it a one-tap step: the
-  set used last time is marked, tapping a set moves straight on, and editing stays behind
-  "Change your set".
+- Set-up is three questions in this order: chip set, players, buy-in. The chip set list is
+  shown in every new game (owner's request, 26 Nov 2026) with the saved set on top and the
+  last-used one marked, so it is one tap. The last step's button creates the game.
+- Only after the game is created does the app say how to organise the table ("Get the table
+  ready": numbered do-this steps, then "Start playing"). Don't put instructions before that.
+- If the chips, players and buy-in don't work together, the line under the buy-in says so, with
+  the one tap that fixes it. There is no separate problem screen.
 - Rarely used things live in the menu or a sheet, not on the main screens.
 - Problems are shown where they are (the field that is wrong), not as a separate screen.
 - Plain words. No poker or software jargon where a normal word will do.
