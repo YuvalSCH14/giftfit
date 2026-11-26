@@ -20,8 +20,10 @@ game.
 ## How the flow is meant to feel
 
 - One thing per screen, nothing scrolls, one main button at the bottom.
-- Set-up is as short as it can be: players, buy-in, split. The chip set is asked once and is
-  then one tap away from the split's Options.
+- Set-up is four taps: players, buy-in, chip set, split. The owner asked (26 Nov 2026) for the
+  chip set list to be shown in every new game, saved set on top. Keep it a one-tap step: the
+  set used last time is marked, tapping a set moves straight on, and editing stays behind
+  "Change your set".
 - Rarely used things live in the menu or a sheet, not on the main screens.
 - Problems are shown where they are (the field that is wrong), not as a separate screen.
 - Plain words. No poker or software jargon where a normal word will do.

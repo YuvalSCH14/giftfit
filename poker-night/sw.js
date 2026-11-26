@@ -3,7 +3,7 @@
  * that copy straight away and refreshed in the background, so a new version shows up on the next open.
  * Bump VERSION with every release, together with version.js, which is what the home screen shows.
  */
-var VERSION = 'poker-night-v10';
+var VERSION = 'poker-night-v11';
 var SHELL = [
   './',
   'app.css',

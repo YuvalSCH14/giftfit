@@ -412,7 +412,9 @@
   function option() { return solved.options[prefs.pick] || solved.options[0] || null; }
   /* The chip set is asked for once. After that a new game is players, buy-in, split, and the
    * chips are one tap away from the split's Options. */
-  function steps() { return prefs.set && !ui.boxEdit ? ['players', 'buyin', 'split'] : ['players', 'buyin', 'box', 'split']; }
+  /* Every new game asks which chip set is on the table: people play at different houses. The set
+   * used last time is marked, so the usual answer is one tap. */
+  function steps() { return ['players', 'buyin', 'box', 'split']; }
   /* Colours in play that still need the number printed on them. */
   function needNumber(chips, numbers) {
     return numbers ? chips.filter(function (c) { return /^\d+$/.test(String(c.count).trim()) && parseInt(c.count, 10) > 0 && !(parseMoney(c.lock) > 0); }) : [];
@@ -651,7 +653,7 @@
         }
         return frame({
           back: true, dots: dots(),
-          body: '<h1>Which chip set do you have?</h1><p class="lede">' + (prefs.set ? 'Tap the set you’re playing with.' : 'You only pick this once.') + '</p><div class="grow"></div><div class="choices">' + mine +
+          body: '<h1>Which chip set do you have?</h1><p class="lede">' + (prefs.set ? 'Tap the set on the table tonight.' : 'Tap the set you’re playing with.') + '</p><div class="grow"></div><div class="choices">' + mine +
             set('300', '300 chips', 'The usual case') + set('500', '500 chips', 'The big case') +
             '<button class="choice quiet" data-act="custom-set"><span class="choice-text"><b>' + (mine ? 'Change your set' : 'Something else') + '</b><small>' + (mine ? 'Colours, counts or numbers' : 'Tell the app what’s in it') + '</small></span><span class="choice-go">' + ICON.back + '</span></button>' +
             '</div><div class="grow two"></div>',
