@@ -791,7 +791,7 @@
           '<div class="count-total" id="countTotal"></div>' +
           (open ? '<button class="felt-link" data-act="count-mode">' + (c.mode === 'chips' ? 'Type the total instead' : 'Count chips instead') + '</button>' : ''),
         dock: !open ? '<button class="btn primary big" data-act="go" data-to="settle">See the results</button>'
-          : c.mode === 'chips' && canPhoto() ? '<div class="dock-row"><button class="btn" data-act="count-photo">' + ICON.camera + 'Photo</button><button class="btn primary big" data-act="save-count">Done</button></div>'
+          : c.mode === 'chips' && canPhoto() ? '<div class="dock-row"><button class="btn" data-act="count-photo">' + ICON.camera + 'Scan</button><button class="btn primary big" data-act="save-count">Done</button></div>'
             : '<button class="btn primary big" data-act="save-count">Done</button>',
       });
     },
@@ -1313,6 +1313,140 @@
    * it on for that phone (and ?photo=0 off again), so it can be tried on real chips first. */
   function photoOn() { try { return localStorage.getItem('pokernight.photo') === '1'; } catch (e) { return false; } }
   function canPhoto() { return photoOn() && typeof ChipCount !== 'undefined' && !!$('#chipPhoto') && !!window.URL && !!document.createElement('canvas').getContext; }
+  /* ── Scanning chips with the camera ─────────
+   * Like scanning a QR code: point the phone at the stacks and hold it there. Frames are read a
+   * few times a second (scanworker.js). A stack is only believed once three sure readings in a
+   * row say the same thing, and the scan is done when every stack has been believed. Nothing is
+   * shown but where it has got to: looking, found, counting, done. */
+  var scan = null, SCAN_NEED = 3, verTaps = 0, verTapAt = 0;
+  var SCAN_TEXT = {
+    looking: ['Point at your stacks', 'Hold the phone level with the chips'],
+    found: ['Stacks detected', 'Hold it there'],
+    counting: ['Counting chips', 'Hold it there'],
+    done: ['Counted', ''],
+    blocked: ['The camera isn’t available', 'Allow the camera for this site, or take a photo instead.'],
+  };
+  function scanShow(state, hint) {
+    if (!scan) return;
+    scan.state = state;
+    scan.el.setAttribute('data-state', state);
+    $('#scanTitle', scan.el).textContent = SCAN_TEXT[state][0];
+    $('#scanHint', scan.el).textContent = hint != null ? hint : SCAN_TEXT[state][1];
+  }
+  function scanProgress(share) {
+    if (scan) $('.scan-arc', scan.el).style.strokeDashoffset = String(163.4 * (1 - Math.max(0, Math.min(1, share))));
+  }
+  function openScanner() {
+    var g = game();
+    if (!g || !ui.count || scan) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return pickPhoto();
+    var el = document.createElement('div');
+    el.className = 'scan';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Scan your chips');
+    el.innerHTML = '<video playsinline muted autoplay></video><div class="scan-shade"></div>' +
+      '<button class="icon-btn glass scan-close" data-act="scan-close" aria-label="Close the camera">&times;</button>' +
+      '<div class="scan-status" aria-live="polite"><span class="scan-ring"><svg viewBox="0 0 60 60" aria-hidden="true">' +
+      '<circle class="scan-track" cx="30" cy="30" r="26"/><circle class="scan-arc" cx="30" cy="30" r="26"/><path class="scan-tick" d="M19 31l8 8 15-17"/></svg></span>' +
+      '<b id="scanTitle"></b><small id="scanHint"></small></div>' +
+      '<div class="scan-foot"><button class="felt-link" data-act="scan-photo" hidden>Take a photo instead</button><button class="felt-link" data-act="scan-close">Type them in instead</button></div>';
+    document.body.appendChild(el);
+    scan = {
+      el: el, video: $('video', el), canvas: document.createElement('canvas'), state: 'looking', busy: false, frame: 0, votes: [], miss: 0,
+      colours: g.lines.map(function (l) { return { id: l.id, color: l.color }; }), opened: Date.now(), foundAt: 0, moved: Date.now(), best: 0, above: false, frames: 0, ms: 0,
+    };
+    scanShow('looking');
+    scanProgress(0);
+    try {
+      scan.worker = new Worker('scanworker.js');
+      scan.worker.onmessage = function (e) { if (scan && e.data.id === scan.frame) scanResult(e.data); };
+      scan.worker.onerror = function () { if (scan) { scan.worker = null; scan.busy = false; } }; // read on this thread instead
+    } catch (e) { scan.worker = null; }
+    navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } }).then(function (stream) {
+      if (!scan || scan.el !== el) return stream.getTracks().forEach(function (t) { t.stop(); }); // closed while the phone was asking
+      scan.stream = stream;
+      scan.video.srcObject = stream;
+      var play = scan.video.play();
+      if (play && play.catch) play.catch(function () { /* autoplay with no sound is allowed; nothing to do */ });
+      scan.timer = setInterval(scanTick, 60);
+    }, function () {
+      if (!scan || scan.el !== el) return;
+      scanShow('blocked');
+      $('[data-act="scan-photo"]', el).hidden = false;
+    });
+  }
+  function closeScanner() {
+    if (!scan) return;
+    clearInterval(scan.timer);
+    if (scan.stream) scan.stream.getTracks().forEach(function (t) { t.stop(); });
+    if (scan.worker) scan.worker.terminate();
+    scan.el.remove();
+    scan = null;
+  }
+  /* One frame to the reader, whenever it is free. */
+  function scanTick() {
+    if (!scan || scan.state === 'done' || scan.state === 'blocked') return;
+    var v = scan.video, waited = Date.now() - scan.moved;
+    // Still nothing after a few seconds: say the one thing most likely to help.
+    if (waited > 4500 && scan.state !== 'done') {
+      scanShow(scan.state, scan.state === 'looking' ? 'Stand the chips in stacks and point at their sides' : scan.above ? 'Lower the phone, level with the chips' : 'Hold steady. More light helps');
+      if (waited > 9000) $('[data-act="scan-photo"]', scan.el).hidden = false;
+    }
+    if (scan.busy || v.readyState < 2 || !v.videoWidth) return;
+    var k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight)), c = scan.canvas;
+    c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+    var ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    var img = ctx.getImageData(0, 0, c.width, c.height), id = ++scan.frame;
+    scan.busy = true;
+    if (scan.worker) return scan.worker.postMessage({ id: id, width: img.width, height: img.height, buffer: img.data.buffer, colours: scan.colours }, [img.data.buffer]);
+    setTimeout(function () { // no worker on this phone: read here, between frames
+      if (!scan) return;
+      var started = Date.now(), out;
+      try { out = ChipCount.scan(img, scan.colours, scan.memo = scan.memo || {}); } catch (e) { out = { stacks: [] }; }
+      scanResult({ id: id, ms: Date.now() - started, coloursSure: !!out.coloursSure, above: !!out.above, stacks: out.stacks.map(function (s) { return { sure: !!s.sure, chips: s.chips.map(function (x) { return x.id; }) }; }) });
+    }, 0);
+  }
+  function scanResult(res) {
+    if (!scan || scan.state === 'done') return;
+    scan.busy = false;
+    scan.frames++; scan.ms += res.ms || 0;
+    scan.el.setAttribute('data-frames', scan.frames + ' frames, ' + Math.round(scan.ms / scan.frames) + ' ms each'); // for testing how fast a phone reads
+    if (res.above) scan.above = true; // once seen from above, that is the advice until it gets somewhere
+    if (!res.stacks.length) {
+      if (++scan.miss >= 3 && scan.state !== 'looking') { scan.votes = []; scan.best = 0; scanProgress(0); scanShow('looking'); scan.moved = Date.now(); }
+      return;
+    }
+    scan.miss = 0;
+    if (scan.state === 'looking') { scanShow('found'); scan.foundAt = Date.now(); scan.moved = Date.now(); }
+    // A different number of stacks is a different picture: what was counted so far is for the old one.
+    if (scan.votes.length !== res.stacks.length) scan.votes = res.stacks.map(function () { return { sig: '', n: 0, chips: [] }; });
+    res.stacks.forEach(function (s, i) {
+      if (!s.sure || !res.coloursSure) return; // an unsure look is no evidence either way
+      var sig = s.chips.join(','), v = scan.votes[i];
+      if (v.sig === sig) v.n++; else { v.sig = sig; v.n = 1; v.chips = s.chips; } // a different answer starts that stack again
+    });
+    var got = scan.votes.reduce(function (a, v) { return a + Math.min(v.n, SCAN_NEED); }, 0);
+    if (got > scan.best) { scan.best = got; scan.moved = Date.now(); scan.above = !!res.above; } // only getting further counts as getting somewhere
+    scanProgress(got / (scan.votes.length * SCAN_NEED));
+    if (scan.state === 'found' && got > 0 && Date.now() - scan.foundAt > 450) scanShow('counting');
+    if (scan.votes.every(function (v) { return v.n >= SCAN_NEED; })) scanDone();
+  }
+  function scanDone() {
+    var g = game(), totals = {};
+    if (!g || !ui.count) return closeScanner();
+    scan.votes.forEach(function (v) { v.chips.forEach(function (id) { totals[id] = (totals[id] || 0) + 1; }); });
+    g.lines.forEach(function (l) { ui.count.counts[l.id] = String(totals[l.id] || 0); });
+    ui.count.mode = 'chips';
+    scanProgress(1);
+    scanShow('done');
+    clearInterval(scan.timer);
+    render(); // the numbers are in place behind the camera by the time it closes
+    setTimeout(function () {
+      closeScanner();
+      toast('Counted. Check the numbers, then tap Done.');
+    }, calm.matches ? 300 : 850);
+  }
   function pickPhoto() {
     var input = $('#chipPhoto');
     if (!input) return;
@@ -1618,6 +1752,16 @@
     'dismiss-tip': function () { prefs.tipDismissed = true; savePrefs(); render(); },
     /* Tapping the version asks the server whether there is a newer one, and switches to it. */
     'check-update': function () {
+      // Five quick taps switch the chip scanner on or off on this phone, while it is being tried out.
+      var now = Date.now();
+      verTaps = now - verTapAt < 1200 ? verTaps + 1 : 1;
+      verTapAt = now;
+      if (verTaps >= 5) {
+        verTaps = 0;
+        try { localStorage.setItem('pokernight.photo', photoOn() ? '0' : '1'); } catch (e) { return; }
+        return toast(photoOn() ? 'Chip scanning is on for this phone' : 'Chip scanning is off');
+      }
+      if (verTaps > 1) return; // still tapping
       if (!('serviceWorker' in navigator)) return toast('Version ' + VERSION);
       toast('Checking for an update…');
       navigator.serviceWorker.getRegistration().then(function (reg) {
@@ -1761,7 +1905,9 @@
       if (input) { input.value = c.counts[id]; replay(input, 'pop'); }
       updateCountTotal();
     },
-    'count-photo': function () { if (prefs.photoTip) pickPhoto(); else openSheet({ type: 'phototip' }); },
+    'count-photo': openScanner,
+    'scan-close': closeScanner,
+    'scan-photo': function () { closeScanner(); pickPhoto(); },
     'photo-go': function () { ui.sheet = null; render(); pickPhoto(); },
     'photo-use': function () {
       var g = game(), sheet = ui.sheet;
@@ -1937,6 +2083,7 @@
     }, 0);
   });
   document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && scan) return closeScanner();
     if (e.key === 'Escape' && ui.sheet) return closeSheet();
     if (e.key === 'Enter' && e.target.tagName === 'INPUT' && !e.target.closest('form')) e.target.blur(); // puts the phone keyboard away
   });
@@ -2119,6 +2266,7 @@
     else if (['home', 'friends', 'history', 'players'].indexOf(ui.screen) >= 0 && ticks % 3 === 0) refresh().catch(function () { /* try again next time */ });
   }, 4000);
   document.addEventListener('visibilitychange', function () {
+    if (document.hidden) closeScanner(); // the phone stops the camera anyway
     if (!document.hidden && prefs.signedIn) refresh().catch(function () { /* try again next time */ });
   });
 

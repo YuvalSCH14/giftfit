@@ -62,3 +62,13 @@ others the phone got right. Trusting a stack only when the phone counter and Cla
 22 of 48 trusted, all correct; not much more coverage than the phone counter alone. Not wired
 into the app; the owner has to decide whether it is worth it.
 
+Live scanner (26 Nov 2026, the owner's design): the Scan button on the cash-out screen opens
+the camera; it says "Point at your stacks", "Stacks detected", "Counting chips", then shows a
+checkmark and fills in the count. No numbers on the camera view. Frames are read on the phone
+in `scanworker.js`; a stack is believed after three sure readings in a row that agree, and the
+scan is done when every stack is. It must feel like scanning a QR code: fast, no decisions.
+Tested only with a fake camera playing shaky video made from the six sample photos: the clean
+one locks in about 2 seconds, the dim-room one in about 8, the other four never lock (so they
+fall back to typing), and nothing wrong was confirmed. Not yet tried on a real phone with real
+chips. It is switched on per phone: five quick taps on the version label, or `?photo=1`.
+

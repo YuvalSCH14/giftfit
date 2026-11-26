@@ -621,5 +621,26 @@
   /* The counting is most dependable when one chip is about this many pixels thick: thick enough
    * for the join to be a clear line, not so thick that the chip's texture starts to look like one. */
   var BEST_PITCH = 14;
-  return { read: read, analyse: analyse, lab: lab, hexToRgb: hexToRgb };
+  /* For a live camera: the same reading, fast enough to run a few times a second. The first
+   * frame works out how far from level the camera is and what size reads best; the frames after
+   * it reuse both (kept in memo), and start afresh when the picture stops making sense. */
+  function scan(img, colours, memo) {
+    memo = memo || {};
+    var out;
+    if (memo.scale && memo.left > 0) {
+      var view = warp(img, memo.lean, memo.scale);
+      out = analyse(view, colours);
+      memo.left--;
+      if (!out.stacks.length || out.pitch < BEST_PITCH * 0.75 || out.pitch > BEST_PITCH * 1.35) memo.left = 0;
+      out.width = view.width; out.height = view.height;
+    } else {
+      out = read(img, colours);
+      memo.lean = out.lean; memo.scale = out.view.width / img.width; memo.left = out.stacks.length ? 10 : 0;
+      out.width = out.view.width; out.height = out.view.height;
+      delete out.view;
+    }
+    return out;
+  }
+
+  return { read: read, scan: scan, analyse: analyse, lab: lab, hexToRgb: hexToRgb };
 });
