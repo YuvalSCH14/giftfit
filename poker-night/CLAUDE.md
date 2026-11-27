@@ -77,3 +77,12 @@ of advice sits under the title and comes from what the frame shows: move back (a
 off), move closer, turn on a light, lower the phone, hold it straight, move slowly left and
 right. Advice changes only after two frames agree, so it does not flicker.
 
+Claude API on zoomed-in stacks (27 Nov 2026): each stack cut out by hand, enlarged up to 4x and
+sent on its own to the same endpoint, twice (48 readings): 45 right, 3 wrong but marked not
+sure, none wrong and sure. About 6 seconds and 2 cents per stack. Whole photos had scored 67%,
+so the zoom is what matters. One "true count" turned out to be wrong when re-checked at higher
+zoom (bar photo, last stack is 6 white + 6 blue, not 6 + 5), so treat the hand counts as
+slightly uncertain. Not built yet: the app would have to find and cut out the stacks itself.
+The owner tried the live scanner on a phone pointed at one of the sample pictures on a screen:
+it never finished in a minute.
+
