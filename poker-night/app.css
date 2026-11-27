@@ -403,6 +403,9 @@ label.chip:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
 .scan-arc { stroke: #f4efe2; stroke-width: 3; stroke-dasharray: 163.4; stroke-dashoffset: 163.4; transition: stroke-dashoffset 0.25s ease; }
 .scan-tick { stroke: #16211b; stroke-width: 4; stroke-dasharray: 36; stroke-dashoffset: 36; transform: rotate(90deg); transform-origin: 30px 30px; }
 .scan[data-state='looking'] .scan-track { animation: scan-breathe 1.6s ease-in-out infinite; }
+.scan[data-state='looking'] .scan-arc { opacity: 0; }
+.scan[data-state='found'] .scan-ring { animation: pop 0.3s ease; }
+.scan[data-state='found'] .scan-track { stroke: rgba(244, 239, 226, 0.7); }
 .scan[data-state='done'] .scan-ring { background: #f4efe2; transform: scale(1.12); }
 .scan[data-state='done'] .scan-tick { stroke-dashoffset: 0; transition: stroke-dashoffset 0.28s ease 0.08s; }
 .scan[data-state='done'] .scan-arc { stroke: #f4efe2; }

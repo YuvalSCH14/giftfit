@@ -1320,18 +1320,30 @@
    * shown but where it has got to: looking, found, counting, done. */
   var scan = null, SCAN_NEED = 3, verTaps = 0, verTapAt = 0;
   var SCAN_TEXT = {
-    looking: ['Point at your stacks', 'Hold the phone level with the chips'],
-    found: ['Stacks detected', 'Hold it there'],
-    counting: ['Counting chips', 'Hold it there'],
-    done: ['Counted', ''],
-    blocked: ['The camera isn’t available', 'Allow the camera for this site, or take a photo instead.'],
+    looking: 'Point at your chips',
+    found: 'Chips detected',
+    counting: 'Counting chips',
+    done: 'Counted',
+    blocked: 'The camera isn’t available',
   };
   function scanShow(state, hint) {
     if (!scan) return;
     scan.state = state;
     scan.el.setAttribute('data-state', state);
-    $('#scanTitle', scan.el).textContent = SCAN_TEXT[state][0];
-    $('#scanHint', scan.el).textContent = hint != null ? hint : SCAN_TEXT[state][1];
+    $('#scanTitle', scan.el).textContent = SCAN_TEXT[state];
+    if (hint != null) scanSay(hint, true);
+  }
+  /* The one line of advice under the title. It only changes once the same advice has come from
+   * two frames running, and then stays a moment, so it reads as guidance and not as flicker. */
+  function scanSay(text, now) {
+    if (!scan) return;
+    scan.wantN = text === scan.want ? scan.wantN + 1 : 1;
+    scan.want = text;
+    if (text === scan.hint) return;
+    if (!now && (scan.wantN < 2 || Date.now() - scan.hintAt < 1100)) return;
+    scan.hint = text;
+    scan.hintAt = Date.now();
+    $('#scanHint', scan.el).textContent = text;
   }
   function scanProgress(share) {
     if (scan) $('.scan-arc', scan.el).style.strokeDashoffset = String(163.4 * (1 - Math.max(0, Math.min(1, share))));
@@ -1353,9 +1365,9 @@
     document.body.appendChild(el);
     scan = {
       el: el, video: $('video', el), canvas: document.createElement('canvas'), state: 'looking', busy: false, frame: 0, votes: [], miss: 0,
-      colours: g.lines.map(function (l) { return { id: l.id, color: l.color }; }), opened: Date.now(), foundAt: 0, moved: Date.now(), best: 0, above: false, frames: 0, ms: 0,
+      colours: g.lines.map(function (l) { return { id: l.id, color: l.color }; }), opened: Date.now(), foundAt: 0, moved: Date.now(), best: 0, seen: 0, hint: '', hintAt: 0, want: '', wantN: 0, frames: 0, ms: 0,
     };
-    scanShow('looking');
+    scanShow('looking', 'Hold the phone level with the table, at the side of the stacks');
     scanProgress(0);
     try {
       scan.worker = new Worker('scanworker.js');
@@ -1371,7 +1383,7 @@
       scan.timer = setInterval(scanTick, 60);
     }, function () {
       if (!scan || scan.el !== el) return;
-      scanShow('blocked');
+      scanShow('blocked', 'Allow the camera for this site, or take a photo instead.');
       $('[data-act="scan-photo"]', el).hidden = false;
     });
   }
@@ -1386,12 +1398,8 @@
   /* One frame to the reader, whenever it is free. */
   function scanTick() {
     if (!scan || scan.state === 'done' || scan.state === 'blocked') return;
-    var v = scan.video, waited = Date.now() - scan.moved;
-    // Still nothing after a few seconds: say the one thing most likely to help.
-    if (waited > 4500 && scan.state !== 'done') {
-      scanShow(scan.state, scan.state === 'looking' ? 'Stand the chips in stacks and point at their sides' : scan.above ? 'Lower the phone, level with the chips' : 'Hold steady. More light helps');
-      if (waited > 9000) $('[data-act="scan-photo"]', scan.el).hidden = false;
-    }
+    var v = scan.video;
+    if (Date.now() - scan.moved > 9000) $('[data-act="scan-photo"]', scan.el).hidden = false; // a long wait: offer the other way
     if (scan.busy || v.readyState < 2 || !v.videoWidth) return;
     var k = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight)), c = scan.canvas;
     c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
@@ -1404,7 +1412,10 @@
       if (!scan) return;
       var started = Date.now(), out;
       try { out = ChipCount.scan(img, scan.colours, scan.memo = scan.memo || {}); } catch (e) { out = { stacks: [] }; }
-      scanResult({ id: id, ms: Date.now() - started, coloursSure: !!out.coloursSure, above: !!out.above, stacks: out.stacks.map(function (s) { return { sure: !!s.sure, chips: s.chips.map(function (x) { return x.id; }) }; }) });
+      var w = out.width || 1, h = out.height || 1, k2 = w / img.width;
+      scanResult({ id: id, ms: Date.now() - started, coloursSure: !!out.coloursSure, light: 128, lean: (scan.memo && scan.memo.lean) || 0, stacks: out.stacks.map(function (x) {
+        return { sure: !!x.sure, chips: x.chips.map(function (c) { return c.id; }), x0: x.x0 / w, x1: x.x1 / w, top: x.top / h, bottom: x.bottom / h, thick: x.pitch / k2, face: (x.face || 0) / x.pitch };
+      }) });
     }, 0);
   }
   function scanResult(res) {
@@ -1412,25 +1423,51 @@
     scan.busy = false;
     scan.frames++; scan.ms += res.ms || 0;
     scan.el.setAttribute('data-frames', scan.frames + ' frames, ' + Math.round(scan.ms / scan.frames) + ' ms each'); // for testing how fast a phone reads
-    if (res.above) scan.above = true; // once seen from above, that is the advice until it gets somewhere
-    if (!res.stacks.length) {
-      if (++scan.miss >= 3 && scan.state !== 'looking') { scan.votes = []; scan.best = 0; scanProgress(0); scanShow('looking'); scan.moved = Date.now(); }
+    var now = Date.now(), stacks = res.stacks, dark = res.light < 55;
+    // Chips are "detected" when a frame has a real stack in it (two chips or more, or several
+    // stacks) and so did the frame before. One odd frame of a glass or a card is not chips.
+    var real = stacks.length > 0 && (stacks.length > 1 || stacks[0].chips.length >= 2);
+    if (!real) {
+      scan.seen = 0;
+      if (++scan.miss >= 3 && scan.state !== 'looking') { scan.votes = []; scan.best = 0; scanProgress(0); scanShow('looking'); scan.moved = now; }
+      if (scan.state === 'looking') {
+        scanSay(dark ? 'It’s too dark here. Turn on a light' : now - scan.opened > 3000 ? 'Stand the chips in stacks, and point at their sides' : 'Hold the phone level with the table, at the side of the stacks');
+      }
       return;
     }
     scan.miss = 0;
-    if (scan.state === 'looking') { scanShow('found'); scan.foundAt = Date.now(); scan.moved = Date.now(); }
+    scan.seen++;
+    if (scan.state === 'looking' && scan.seen >= 2) {
+      scanShow('found', plural(stacks.length, 'stack') + ' in view');
+      scan.foundAt = now; scan.moved = now;
+    }
     // A different number of stacks is a different picture: what was counted so far is for the old one.
-    if (scan.votes.length !== res.stacks.length) scan.votes = res.stacks.map(function () { return { sig: '', n: 0, chips: [] }; });
-    res.stacks.forEach(function (s, i) {
-      if (!s.sure || !res.coloursSure) return; // an unsure look is no evidence either way
-      var sig = s.chips.join(','), v = scan.votes[i];
-      if (v.sig === sig) v.n++; else { v.sig = sig; v.n = 1; v.chips = s.chips; } // a different answer starts that stack again
+    if (scan.votes.length !== stacks.length) {
+      scan.votes = stacks.map(function () { return { sig: '', n: 0, chips: [] }; });
+    }
+    stacks.forEach(function (st, i) {
+      if (!st.sure || !res.coloursSure) return; // an unsure look is no evidence either way
+      var sig = st.chips.join(','), v = scan.votes[i];
+      if (v.sig === sig) v.n++; else { v.sig = sig; v.n = 1; v.chips = st.chips; } // a different answer starts that stack again
     });
     var got = scan.votes.reduce(function (a, v) { return a + Math.min(v.n, SCAN_NEED); }, 0);
-    if (got > scan.best) { scan.best = got; scan.moved = Date.now(); scan.above = !!res.above; } // only getting further counts as getting somewhere
-    scanProgress(got / (scan.votes.length * SCAN_NEED));
-    if (scan.state === 'found' && got > 0 && Date.now() - scan.foundAt > 450) scanShow('counting');
-    if (scan.votes.every(function (v) { return v.n >= SCAN_NEED; })) scanDone();
+    if (got > scan.best) { scan.best = got; scan.moved = now; } // only getting further counts as getting somewhere
+    if (scan.state === 'found' && now - scan.foundAt > 600) scanShow('counting', 'Hold steady');
+    if (scan.state === 'counting') {
+      scanProgress(got / (scan.votes.length * SCAN_NEED));
+      // What would help most, from what this frame shows.
+      var thick = stacks.map(function (st) { return st.thick; }).sort(function (a, b) { return a - b; })[stacks.length >> 1];
+      var tall = Math.max.apply(null, stacks.map(function (st) { return st.bottom - st.top; })); // the tallest stack, as a share of the picture
+      var cut = stacks.some(function (st) { return st.x0 < 0.012 || st.x1 > 0.988 || st.top < 0.015 || st.bottom > 0.985; });
+      var above = stacks.some(function (st) { return st.face > 1.1; });
+      scanSay(cut ? 'Move back a little, so every stack is in view'
+        : thick < 10 || tall < 0.18 ? 'Move closer to the chips'
+          : dark ? 'It’s too dark here. Turn on a light'
+            : above ? 'Lower the phone, level with the chips'
+              : Math.abs(res.lean) > 0.1 ? 'Hold the phone straight'
+                : now - scan.moved > 3500 ? 'Move slowly left and right' : 'Hold steady');
+    }
+    if (scan.state !== 'looking' && scan.votes.every(function (v) { return v.n >= SCAN_NEED; })) scanDone();
   }
   function scanDone() {
     var g = game(), totals = {};
@@ -1439,7 +1476,7 @@
     g.lines.forEach(function (l) { ui.count.counts[l.id] = String(totals[l.id] || 0); });
     ui.count.mode = 'chips';
     scanProgress(1);
-    scanShow('done');
+    scanShow('done', '');
     clearInterval(scan.timer);
     render(); // the numbers are in place behind the camera by the time it closes
     setTimeout(function () {

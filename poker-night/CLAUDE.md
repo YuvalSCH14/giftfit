@@ -71,4 +71,9 @@ Tested only with a fake camera playing shaky video made from the six sample phot
 one locks in about 2 seconds, the dim-room one in about 8, the other four never lock (so they
 fall back to typing), and nothing wrong was confirmed. Not yet tried on a real phone with real
 chips. It is switched on per phone: five quick taps on the version label, or `?photo=1`.
+The scanner coaches before it counts (owner's request, 27 Nov 2026): it says "Chips detected"
+only after two frames running show a real stack, and "Counting chips" only after that. One line
+of advice sits under the title and comes from what the frame shows: move back (a stack is cut
+off), move closer, turn on a light, lower the phone, hold it straight, move slowly left and
+right. Advice changes only after two frames agree, so it does not flicker.
 
